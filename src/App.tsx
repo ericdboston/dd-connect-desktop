@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
-import ShellPlaceholder from './pages/ShellPlaceholder';
+import ShellLayout from './pages/shell/ShellLayout';
+import PagePlaceholder from './pages/shell/PagePlaceholder';
 import { useAuth } from './store/auth';
 import { brand } from './theme';
 
@@ -17,7 +18,7 @@ function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
   const isAuthed = useAuth((s) => s.isAuthed);
   const hydrating = useAuth((s) => s.hydrating);
   if (hydrating) return <BootSplash />;
-  if (isAuthed) return <Navigate to="/shell" replace />;
+  if (isAuthed) return <Navigate to="/shell/dialpad" replace />;
   return <>{children}</>;
 }
 
@@ -59,10 +60,36 @@ export default function App() {
           path="/shell"
           element={
             <RequireAuth>
-              <ShellPlaceholder />
+              <ShellLayout />
             </RequireAuth>
           }
-        />
+        >
+          <Route index element={<Navigate to="dialpad" replace />} />
+          <Route
+            path="dialpad"
+            element={<PagePlaceholder title="Dialpad" subtitle="Coming in Step 3D" />}
+          />
+          <Route
+            path="contacts"
+            element={<PagePlaceholder title="Contacts" subtitle="Coming soon" />}
+          />
+          <Route
+            path="recents"
+            element={<PagePlaceholder title="Recents" subtitle="Coming soon" />}
+          />
+          <Route
+            path="voicemail"
+            element={<PagePlaceholder title="Voicemail" subtitle="Coming soon" />}
+          />
+          <Route
+            path="chat"
+            element={<PagePlaceholder title="Chat" subtitle="Coming soon" />}
+          />
+          <Route
+            path="settings"
+            element={<PagePlaceholder title="Settings" subtitle="Coming soon" />}
+          />
+        </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </HashRouter>
