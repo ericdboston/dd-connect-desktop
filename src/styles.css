@@ -1,6 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
 html, body, #root {
   margin: 0;
+  padding: 0;
   height: 100%;
   background: #0d1a6e;
-  color: #ffffff;
+  color: #f0f4ff;
+  font-family: 'Syne', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+input, button {
+  font-family: inherit;
+}
+
+/* Login card input focus — blue border per brand */
+input[type="text"]:focus,
+input[type="password"]:focus {
+  border-color: #4da6ff !important;
+  box-shadow: 0 0 0 3px rgba(77, 166, 255, 0.15);
+}
+
+/* Login submit hover */
+button[type="submit"]:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Thin scrollbar to match dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0a1458;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f2f8a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2e7bd1;
 }
