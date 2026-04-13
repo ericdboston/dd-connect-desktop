@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import ShellLayout from './pages/shell/ShellLayout';
 import PagePlaceholder from './pages/shell/PagePlaceholder';
+import DialpadPage from './pages/shell/DialpadPage';
 import { useAuth } from './store/auth';
 import { brand } from './theme';
 
@@ -65,10 +66,7 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="dialpad" replace />} />
-          <Route
-            path="dialpad"
-            element={<PagePlaceholder title="Dialpad" subtitle="Coming in Step 3D" />}
-          />
+          <Route path="dialpad" element={<DialpadPage />} />
           <Route
             path="contacts"
             element={<PagePlaceholder title="Contacts" subtitle="Coming soon" />}

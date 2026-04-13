@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../store/auth';
+import { useSip } from '../../store/sip';
 import { brand, fonts } from '../../theme';
 
 interface NavItem {
@@ -17,15 +19,30 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/shell/settings', label: 'Settings', icon: '⚙️' },
 ];
 
-// Hard-coded for now — Step 3C wires the real SIP registration state
-// from the Verto engine into a separate store.
-const isRegistered = false;
-
 export default function ShellLayout() {
   const display_name = useAuth((s) => s.display_name);
   const extension = useAuth((s) => s.extension);
-  const signOut = useAuth((s) => s.signOut);
+  const sip_config = useAuth((s) => s.sip_config);
+  const authSignOut = useAuth((s) => s.signOut);
   const location = useLocation();
+
+  const isRegistered = useSip((s) => s.isRegistered);
+  const initSip = useSip((s) => s.init);
+  const destroySip = useSip((s) => s.destroy);
+
+  // Bring the Verto engine up as soon as the shell mounts with a valid
+  // session. Tear it down on unmount (sign-out triggers an unmount via
+  // the route guard redirecting to /login).
+  useEffect(() => {
+    if (sip_config) initSip(sip_config);
+    return () => { destroySip(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sip_config]);
+
+  async function signOut() {
+    destroySip();
+    await authSignOut();
+  }
 
   const currentTitle =
     NAV_ITEMS.find((n) => location.pathname.startsWith(n.to))?.label ?? 'Dialpad';
