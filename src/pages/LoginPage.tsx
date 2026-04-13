@@ -102,12 +102,11 @@ export default function LoginPage() {
 
       <div className="ddc-content">
         {/* Logo */}
-        <div className="ddc-logo-circle">
-          <div className="ddc-logo-letters">
-            <span className="ddc-d-red">D</span>
-            <span className="ddc-d-blue">D</span>
-          </div>
-        </div>
+        <img
+          src="/ddconnect-logo.png"
+          alt="DD Connect"
+          style={{ width: 140, height: 140, objectFit: 'contain', marginBottom: 8 }}
+        />
         <div className="ddc-wordmark">CONNECT</div>
         <div className="ddc-underline" />
         <div className="ddc-tagline">UNIFIED COMMUNICATIONS</div>
@@ -220,44 +219,6 @@ export default function LoginPage() {
           align-items: center;
           width: 100%;
           max-width: 380px;
-        }
-
-        .ddc-logo-circle {
-          width: 132px;
-          height: 132px;
-          border-radius: 50%;
-          background: rgba(8, 18, 60, 0.6);
-          border: 1px solid rgba(77, 166, 255, 0.18);
-          box-shadow:
-            inset 0 0 24px rgba(0, 0, 0, 0.45),
-            0 0 40px rgba(77, 166, 255, 0.10);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 22px;
-        }
-        .ddc-logo-letters {
-          position: relative;
-          width: 86px;
-          height: 64px;
-        }
-        .ddc-d-red, .ddc-d-blue {
-          position: absolute;
-          top: 0;
-          font-family: ${fonts.sans};
-          font-weight: 800;
-          font-size: 64px;
-          line-height: 1;
-        }
-        .ddc-d-red {
-          left: 0;
-          color: #e8132a;
-          text-shadow: 0 0 18px rgba(232, 19, 42, 0.45);
-        }
-        .ddc-d-blue {
-          right: 0;
-          color: #4da6ff;
-          text-shadow: 0 0 18px rgba(77, 166, 255, 0.45);
         }
 
         .ddc-wordmark {
