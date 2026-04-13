@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../store/auth';
 import { useSip } from '../../store/sip';
+import ActiveCallPage from './ActiveCallPage';
 import { brand, fonts } from '../../theme';
 
 interface NavItem {
@@ -29,6 +30,7 @@ export default function ShellLayout() {
   const isRegistered = useSip((s) => s.isRegistered);
   const initSip = useSip((s) => s.init);
   const destroySip = useSip((s) => s.destroy);
+  const currentCall = useSip((s) => s.currentCall);
 
   // Bring the Verto engine up as soon as the shell mounts with a valid
   // session. Tear it down on unmount (sign-out triggers an unmount via
@@ -101,7 +103,11 @@ export default function ShellLayout() {
         </header>
 
         <main className="ddc-content">
-          <Outlet />
+          {/* While a call is in progress, the active-call screen takes
+              over the content area. When sip clears currentCall (call
+              ended either side), we automatically fall back to whatever
+              route was active. No URL change, no navigation race. */}
+          {currentCall ? <ActiveCallPage /> : <Outlet />}
         </main>
       </div>
 

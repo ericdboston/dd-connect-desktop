@@ -26,7 +26,6 @@ export default function DialpadPage() {
   const isRegistered = useSip((s) => s.isRegistered);
   const currentCall = useSip((s) => s.currentCall);
   const makeCall = useSip((s) => s.makeCall);
-  const hangupCall = useSip((s) => s.hangupCall);
 
   const [digits, setDigits] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +81,10 @@ export default function DialpadPage() {
     }
   }
 
+  // When a call is active the layout swaps in <ActiveCallPage /> and
+  // this dialpad isn't visible at all — but the local `currentCall` ref
+  // still gates the Call button so callers see a disabled state instead
+  // of a "call already in progress" error if they somehow get here.
   const inCall = currentCall !== null;
 
   return (
@@ -89,11 +92,6 @@ export default function DialpadPage() {
       <div className="ddc-dial-display">
         <div className="ddc-dial-digits">{digits || ' '}</div>
         {error && <div className="ddc-dial-error">{error}</div>}
-        {inCall && currentCall && (
-          <div className="ddc-dial-callstate">
-            {currentCall.state === 'ringing' ? 'Calling…' : 'Connected'} · {currentCall.number}
-          </div>
-        )}
       </div>
 
       <div className="ddc-dial-grid">
@@ -120,22 +118,15 @@ export default function DialpadPage() {
         >
           ⌫
         </button>
-        {inCall ? (
-          <button type="button" className="ddc-dial-end" onClick={hangupCall}>
-            <span className="ddc-dial-call-icon">⌃</span>
-            END CALL
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="ddc-dial-call"
-            onClick={place}
-            disabled={!digits || !isRegistered}
-          >
-            <span className="ddc-dial-call-icon">📞</span>
-            CALL
-          </button>
-        )}
+        <button
+          type="button"
+          className="ddc-dial-call"
+          onClick={place}
+          disabled={!digits || !isRegistered || inCall}
+        >
+          <span className="ddc-dial-call-icon">📞</span>
+          CALL
+        </button>
         <div className="ddc-dial-spacer" />
       </div>
 
