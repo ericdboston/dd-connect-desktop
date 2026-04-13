@@ -144,29 +144,41 @@ export class VertoClient {
     const callId = randomUuid();
     this.currentCallId = callId;
 
-    await this.openPeerConnection();
-    if (!this.pc) throw new Error('Peer connection failed');
+    try {
+      await this.openPeerConnection();
+      if (!this.pc) throw new Error('Peer connection failed');
 
-    const offer = await this.pc.createOffer({ offerToReceiveAudio: true });
-    await this.pc.setLocalDescription(offer);
-    await this.waitForIceComplete();
+      const offer = await this.pc.createOffer({ offerToReceiveAudio: true });
+      await this.pc.setLocalDescription(offer);
+      await this.waitForIceComplete();
 
-    const localSdp = this.pc.localDescription?.sdp;
-    if (!localSdp) throw new Error('No local SDP after offer');
+      const localSdp = this.pc.localDescription?.sdp;
+      if (!localSdp) throw new Error('No local SDP after offer');
 
-    await this.sendRequest('verto.invite', {
-      sdp: localSdp,
-      dialogParams: {
-        callID: callId,
-        destination_number: destination,
-        caller_id_name: this.config.extension,
-        caller_id_number: this.config.extension,
-        useVideo: false,
-        useStereo: false,
-        screenShare: false,
-        useCamera: false,
-      },
-    });
+      await this.sendRequest('verto.invite', {
+        sdp: localSdp,
+        dialogParams: {
+          callID: callId,
+          destination_number: destination,
+          caller_id_name: this.config.extension,
+          caller_id_number: this.config.extension,
+          useVideo: false,
+          useStereo: false,
+          screenShare: false,
+          useCamera: false,
+        },
+      });
+    } catch (err) {
+      // Reset internal call state so the next attempt isn't blocked by
+      // 'A call is already in progress' from the early bail above.
+      // Failures here include verto.invite errors (CHAN_NOT_IMPLEMENTED,
+      // INVALID_DEST, etc), getUserMedia denial, and SDP setLocal/Remote
+      // exceptions. cleanupCall() handles pc.close + localStream stop +
+      // remoteAudio detach + clearing currentCallId/pendingOfferSdp.
+      console.warn('[Verto] makeCall failed, cleaning up', err);
+      this.cleanupCall();
+      throw err;
+    }
   }
 
   async answerCall(): Promise<void> {
