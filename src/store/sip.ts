@@ -38,6 +38,7 @@ export const useSip = create<SipState>((set, get) => ({
       url: config.verto_url,
       extension: config.extension,
       password: config.password,
+      domain: config.sip_domain,
       stunServer: config.stun_server,
     });
 

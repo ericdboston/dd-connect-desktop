@@ -28,6 +28,15 @@ export interface VertoConfig {
   url: string;
   extension: string;
   password: string;
+  /**
+   * SIP domain the user lives in inside the FreeSWITCH directory
+   * (e.g. "lab.ddtg.local"). Sent to mod_verto as `${extension}@${domain}`
+   * so the directory lookup hits the right tenant. mod_verto's
+   * force-register-domain may rewrite this server-side, but we still
+   * send the qualified form for clarity and so the client works against
+   * any FS that doesn't override it.
+   */
+  domain: string;
   stunServer?: string;
 }
 
@@ -252,8 +261,11 @@ export class VertoClient {
 
   private async sendLogin(): Promise<void> {
     try {
+      const loginValue = this.config.domain
+        ? `${this.config.extension}@${this.config.domain}`
+        : this.config.extension;
       await this.sendRequest('login', {
-        login: this.config.extension,
+        login: loginValue,
         passwd: this.config.password,
         sessid: this.sessionId,
       });
@@ -355,6 +367,17 @@ export class VertoClient {
       case 'verto.bye':
         this.handleRemoteBye();
         break;
+
+      case 'verto.ping':
+        // Server keepalive — reply with a pong using the same id.
+        // FS accepts either {method: 'verto.ping'} or {pong: timestamp}
+        // as a successful ack; we send the explicit pong shape so logs
+        // are obviously a heartbeat reply.
+        if (id !== undefined) {
+          this.sendResponse(id, { pong: Date.now() });
+          return; // don't fall through to the trailing default ack
+        }
+        return;
 
       case 'verto.media':
       case 'verto.info':
