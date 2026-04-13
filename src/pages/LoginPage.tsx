@@ -105,7 +105,7 @@ export default function LoginPage() {
         <img
           src="/ddconnect-logo.png"
           alt="DD Connect"
-          style={{ width: 140, height: 140, objectFit: 'contain', marginBottom: 8 }}
+          style={{ width: 140, height: 140, objectFit: 'contain', marginBottom: 0, display: 'block' }}
         />
         <div className="ddc-wordmark">CONNECT</div>
         <div className="ddc-underline" />
@@ -225,9 +225,11 @@ export default function LoginPage() {
           font-family: ${fonts.sans};
           font-weight: 700;
           font-size: 30px;
+          line-height: 1;
           letter-spacing: 14px;
           color: #f0f4ff;
           padding-left: 14px; /* visually compensate for letter-spacing */
+          margin-top: -8px;   /* pull tight to the logo PNG's transparent padding */
         }
         .ddc-underline {
           width: 180px;
