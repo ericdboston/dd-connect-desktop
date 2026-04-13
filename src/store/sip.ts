@@ -75,26 +75,45 @@ export const useSip = create<SipState>((set, get) => ({
     set({ client: null, isRegistered: false, currentCall: null, muted: false });
   },
 
-  async makeCall(number) {
-    const c = get().client;
-    if (!c) throw new Error('SIP client not initialized');
-    set({
-      currentCall: {
-        id: '',
-        number,
-        name: number,
+  async makeCall(destination) {
+    try {
+      console.log('[sip] makeCall started, destination:', destination);
+
+      // Test getUserMedia directly before handing off to VertoClient.
+      // If this throws on Windows Electron with a permission error, we
+      // know the issue is the OS mic gate — not the Verto protocol or
+      // the SDP exchange.
+      console.log('[sip] requesting microphone…');
+      const testStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
+      console.log('[sip] microphone OK, tracks:', testStream.getTracks().length);
+      testStream.getTracks().forEach((t) => t.stop()); // release test stream
+
+      const call: ActiveCall = {
+        id: crypto.randomUUID(),
+        number: destination,
+        name: destination,
         direction: 'outgoing',
         state: 'ringing',
         startedAt: Date.now(),
-      },
-      muted: false,
-    });
-    try {
-      await c.makeCall(number);
-    } catch (e) {
-      console.error('[sip] makeCall failed', e);
+      };
+      set({ currentCall: call, muted: false });
+
+      console.log('[sip] calling VertoClient.makeCall…');
+      await get().client?.makeCall(destination);
+      console.log('[sip] VertoClient.makeCall returned OK');
+    } catch (err: unknown) {
+      console.error('[sip] makeCall FAILED:', err);
+      console.error('[sip] error type:', typeof err);
+      try {
+        console.error(
+          '[sip] error JSON:',
+          JSON.stringify(err, Object.getOwnPropertyNames(err as object)),
+        );
+      } catch { /* circular reference safety */ }
       set({ currentCall: null });
-      throw e;
     }
   },
 
