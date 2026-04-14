@@ -90,6 +90,10 @@ export default function SettingsPage() {
 
   async function handleSignOut() {
     destroySip();
+    // Yield one tick so the SipClient WebSocket teardown completes
+    // before the auth store clears — prevents stale Chromium
+    // keepalive sockets from breaking the next login POST.
+    await new Promise((r) => setTimeout(r, 0));
     await authSignOut();
   }
 

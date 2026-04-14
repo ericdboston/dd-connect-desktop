@@ -48,6 +48,12 @@ export default function ShellLayout() {
 
   async function signOut() {
     destroySip();
+    // Yield one tick so the SipClient WebSocket teardown completes
+    // before the auth store clears and React re-renders the tree.
+    // Without this, Chromium's TLS session state can carry stale
+    // keepalive sockets into the next login, causing the very next
+    // /api/auth/ddconnect/ POST to fail at the transport layer.
+    await new Promise((r) => setTimeout(r, 0));
     await authSignOut();
   }
 

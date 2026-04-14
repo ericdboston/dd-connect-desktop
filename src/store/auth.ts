@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SipConfig } from '../api/types';
+import { resetApiInstance } from '../api/client';
 
 // Persisted slice — mirrored into electron-store for reboot survival
 // when "Remember me" is on. We deliberately omit the raw SIP password
@@ -18,6 +19,7 @@ interface AuthState extends Partial<PersistedAuth> {
   setSession: (s: PersistedAuth, remember: boolean) => Promise<void>;
   hydrate: () => Promise<void>;
   signOut: () => Promise<void>;
+  updateAccess: (newAccessToken: string) => Promise<void>;
 }
 
 const STORE_KEY = 'session';
@@ -68,5 +70,30 @@ export const useAuth = create<AuthState>((set) => ({
       display_name: undefined,
       sip_config: undefined,
     });
+    // Drop the cached axios instance so Chromium's HTTP keepalive
+    // pool doesn't carry stale sockets into the next login session.
+    // This was causing the very next /api/auth/ddconnect/ POST to
+    // die at the transport layer after a sign-out → re-login cycle
+    // (the preflight would succeed but the POST never fired).
+    resetApiInstance();
+  },
+
+  async updateAccess(newAccessToken) {
+    // Update the in-memory store first so any pending API call that
+    // reads auth.access via .getState() sees the new token immediately.
+    set({ access: newAccessToken });
+    // Persist to electron-store if a remembered session exists, so the
+    // next cold start has the freshest token available.
+    try {
+      const saved = await window.ddconnect?.store.get<PersistedAuth>(STORE_KEY);
+      if (saved) {
+        await window.ddconnect?.store.set(STORE_KEY, {
+          ...saved,
+          access: newAccessToken,
+        });
+      }
+    } catch (e) {
+      console.warn('[auth] updateAccess persist failed', e);
+    }
   },
 }));
