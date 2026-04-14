@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { VertoClient, type IncomingCallInfo } from '../services/VertoClient';
+import { SipClient, type IncomingCallInfo } from '../services/SipClient';
 import type { SipConfig } from '../api/types';
 
 export interface ActiveCall {
@@ -12,7 +12,7 @@ export interface ActiveCall {
 }
 
 interface SipState {
-  client: VertoClient | null;
+  client: SipClient | null;
   isRegistered: boolean;
   currentCall: ActiveCall | null;
   muted: boolean;
@@ -34,16 +34,23 @@ export const useSip = create<SipState>((set, get) => ({
   init(config) {
     // Idempotent by design — React StrictMode double-mounts the
     // ShellLayout effect in dev, which would otherwise churn the
-    // VertoClient. The early-return here makes repeated calls safe.
+    // SipClient. The early-return here makes repeated calls safe.
     // destroy() is only ever called from an explicit sign-out path,
     // NOT from a React useEffect cleanup.
     if (get().client) return;
 
-    const client = new VertoClient({
-      url: config.verto_url,
+    const client = new SipClient({
+      // ws_url is mod_sofia WSS on port 7443, the same path the mobile
+      // app uses. verto_url (mod_verto on /verto) is still advertised
+      // by the backend sip_config but intentionally not used here —
+      // there's an upstream bug in mod_verto that blocked the desktop
+      // Verto path in v0.1 debugging, see commit history on 2026-04-13.
+      wsUrl: config.ws_url,
       extension: config.extension,
       password: config.password,
       domain: config.sip_domain,
+      displayName: config.display_name,
+      registerExpires: config.register_expires,
       stunServer: config.stun_server,
     });
 
@@ -70,13 +77,18 @@ export const useSip = create<SipState>((set, get) => ({
       set({ currentCall: null, muted: false });
     });
 
-    client.connect();
+    // connect() is async but we don't await here — the state transitions
+    // will drive the UI via the event listeners above.
+    client.connect().catch((e) => {
+      console.error('[sip] connect failed', e);
+      set({ isRegistered: false });
+    });
     set({ client });
   },
 
   destroy() {
     const c = get().client;
-    if (c) c.disconnect();
+    if (c) { void c.disconnect(); }
     set({ client: null, isRegistered: false, currentCall: null, muted: false });
   },
 
@@ -84,10 +96,8 @@ export const useSip = create<SipState>((set, get) => ({
     try {
       console.log('[sip] makeCall started, destination:', destination);
 
-      // Test getUserMedia directly before handing off to VertoClient.
-      // If this throws on Windows Electron with a permission error, we
-      // know the issue is the OS mic gate — not the Verto protocol or
-      // the SDP exchange.
+      // Probe getUserMedia up front so any OS-level mic permission
+      // denial surfaces as a clear error before we even touch SIP.
       console.log('[sip] requesting microphone…');
       const testStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
@@ -106,9 +116,9 @@ export const useSip = create<SipState>((set, get) => ({
       };
       set({ currentCall: call, muted: false });
 
-      console.log('[sip] calling VertoClient.makeCall…');
+      console.log('[sip] calling SipClient.makeCall…');
       await get().client?.makeCall(destination);
-      console.log('[sip] VertoClient.makeCall returned OK');
+      console.log('[sip] SipClient.makeCall returned OK');
     } catch (err: unknown) {
       console.error('[sip] makeCall FAILED:', err);
       console.error('[sip] error type:', typeof err);
@@ -130,7 +140,7 @@ export const useSip = create<SipState>((set, get) => ({
 
   hangupCall() {
     const c = get().client;
-    if (c) c.hangupCall();
+    if (c) { void c.hangupCall(); }
     set({ currentCall: null, muted: false });
   },
 
