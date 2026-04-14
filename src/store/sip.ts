@@ -68,13 +68,37 @@ export const useSip = create<SipState>((set, get) => ({
           startedAt: Date.now(),
         },
       });
+      // Pop the always-on-top Electron window via the IPC bridge.
+      // If ddconnect isn't on window (e.g. running in a browser,
+      // pure web fallback, etc.) this is a no-op.
+      void window.ddconnect?.incomingCall?.show({
+        callerName: info.callerName,
+        callerNumber: info.callerNumber,
+        callId: info.callId,
+      });
     });
     client.on('callAnswered', () => {
       const cur = get().currentCall;
       if (cur) set({ currentCall: { ...cur, state: 'connected' } });
+      // Close the popup now that the main window is handling the call.
+      void window.ddconnect?.incomingCall?.dismiss();
     });
     client.on('callEnded', () => {
       set({ currentCall: null, muted: false });
+      void window.ddconnect?.incomingCall?.dismiss();
+    });
+
+    // Subscribe to popup button actions forwarded from the main
+    // process. Decline → 486 Busy (via hangupCall). Answer → accept.
+    // Registered once per sip store init, which is guarded by the
+    // early-return at the top of init(), so this runs exactly once
+    // per authed session.
+    window.ddconnect?.incomingCall?.onAction((action) => {
+      if (action === 'answer') {
+        void client.answerCall();
+      } else if (action === 'decline') {
+        void client.hangupCall();
+      }
     });
 
     // connect() is async but we don't await here — the state transitions

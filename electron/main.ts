@@ -1,5 +1,9 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
+import {
+  openIncomingCallWindow,
+  closeIncomingCallWindow,
+} from './incomingCallWindow';
 
 // Disable GPU hardware acceleration on Linux dev boxes where it tends to
 // crash Electron. Safe to leave on — software rendering is plenty fast
@@ -55,6 +59,48 @@ ipcMain.handle('store:clear', async () => {
   s.clear();
 });
 
+// ---------- Incoming-call popup IPC ----------
+//
+// Message flow:
+//   1. SipClient (main renderer) receives a SIP INVITE from mod_sofia
+//   2. useSip.init()'s 'incomingCall' listener calls
+//      ipcRenderer.invoke('incoming-call:show', info)
+//   3. This handler opens/refocuses the popup window
+//   4. Popup renderer's Answer/Decline buttons call
+//      ipcRenderer.send('incoming-call:action', 'answer' | 'decline')
+//   5. This handler forwards the action to the main window
+//   6. Main window's useSip bridge calls SipClient.answerCall() or
+//      SipClient.hangupCall() accordingly
+//   7. When the call ends (for any reason) main renderer calls
+//      ipcRenderer.invoke('incoming-call:dismiss') which closes popup
+let mainWindow: BrowserWindow | null = null;
+
+ipcMain.handle(
+  'incoming-call:show',
+  (
+    _e,
+    info: { callerName: string; callerNumber: string; callId: string },
+  ) => {
+    openIncomingCallWindow(info);
+  },
+);
+
+ipcMain.handle('incoming-call:dismiss', () => {
+  closeIncomingCallWindow();
+});
+
+ipcMain.on(
+  'incoming-call:action',
+  (_e, action: 'answer' | 'decline') => {
+    // Forward to the main renderer, which wires it into SipClient.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('incoming-call:action', action);
+    }
+    // Close the popup — the main window takes over the call UI from here.
+    closeIncomingCallWindow();
+  },
+);
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -67,6 +113,11 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
   });
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
