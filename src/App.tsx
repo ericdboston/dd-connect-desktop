@@ -5,6 +5,7 @@ import ShellLayout from './pages/shell/ShellLayout';
 import PagePlaceholder from './pages/shell/PagePlaceholder';
 import DialpadPage from './pages/shell/DialpadPage';
 import ContactsPage from './pages/shell/ContactsPage';
+import RecentsPage from './pages/shell/RecentsPage';
 import SettingsPage from './pages/shell/SettingsPage';
 import IncomingCallPopup from './pages/IncomingCallPopup';
 import { useAuth } from './store/auth';
@@ -87,10 +88,7 @@ export default function App() {
           <Route index element={<Navigate to="dialpad" replace />} />
           <Route path="dialpad" element={<DialpadPage />} />
           <Route path="contacts" element={<ContactsPage />} />
-          <Route
-            path="recents"
-            element={<PagePlaceholder title="Recents" subtitle="Coming soon" />}
-          />
+          <Route path="recents" element={<RecentsPage />} />
           <Route
             path="voicemail"
             element={<PagePlaceholder title="Voicemail" subtitle="Coming soon" />}
