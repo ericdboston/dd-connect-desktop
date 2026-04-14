@@ -2,8 +2,11 @@ import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../store/auth';
 import { useSip } from '../../store/sip';
+import { useChatUnread } from '../../store/chat';
 import ActiveCallPage from './ActiveCallPage';
 import { brand, fonts } from '../../theme';
+
+const CHAT_UNREAD_POLL_MS = 20_000;
 
 interface NavItem {
   to: string;
@@ -24,7 +27,11 @@ export default function ShellLayout() {
   const display_name = useAuth((s) => s.display_name);
   const extension = useAuth((s) => s.extension);
   const sip_config = useAuth((s) => s.sip_config);
+  const access = useAuth((s) => s.access);
   const authSignOut = useAuth((s) => s.signOut);
+  const chatUnread = useChatUnread((s) => s.unread);
+  const refreshChatUnread = useChatUnread((s) => s.refresh);
+  const resetChatUnread = useChatUnread((s) => s.reset);
   const location = useLocation();
 
   const isRegistered = useSip((s) => s.isRegistered);
@@ -46,7 +53,22 @@ export default function ShellLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sip_config]);
 
+  // Poll the chat unread count so the sidebar badge tracks new
+  // messages without requiring the user to open the Chat page. The
+  // ChatPage itself also refreshes this store on WS open, send, and
+  // incoming broadcast — polling is just the safety net for a
+  // session that never opens chat at all.
+  useEffect(() => {
+    if (!access) return;
+    void refreshChatUnread(access);
+    const timer = setInterval(() => {
+      if (access) void refreshChatUnread(access);
+    }, CHAT_UNREAD_POLL_MS);
+    return () => clearInterval(timer);
+  }, [access, refreshChatUnread]);
+
   async function signOut() {
+    resetChatUnread();
     destroySip();
     // Yield one tick so the SipClient WebSocket teardown completes
     // before the auth store clears and React re-renders the tree.
@@ -70,18 +92,24 @@ export default function ShellLayout() {
         </div>
 
         <nav className="ddc-nav">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `ddc-nav-item${isActive ? ' ddc-nav-item-active' : ''}`
-              }
-            >
-              <span className="ddc-nav-icon">{item.icon}</span>
-              <span className="ddc-nav-label">{item.label}</span>
-            </NavLink>
-          ))}
+          {NAV_ITEMS.map((item) => {
+            const badge = item.to === '/shell/chat' && chatUnread > 0
+              ? (chatUnread > 99 ? '99+' : String(chatUnread))
+              : null;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `ddc-nav-item${isActive ? ' ddc-nav-item-active' : ''}`
+                }
+              >
+                <span className="ddc-nav-icon">{item.icon}</span>
+                <span className="ddc-nav-label">{item.label}</span>
+                {badge && <span className="ddc-nav-badge">{badge}</span>}
+              </NavLink>
+            );
+          })}
         </nav>
 
         <div className="ddc-sidebar-foot">
@@ -191,7 +219,19 @@ export default function ShellLayout() {
           border-left-color: ${brand.blue};
         }
         .ddc-nav-icon { font-size: 18px; line-height: 1; }
-        .ddc-nav-label { line-height: 1; }
+        .ddc-nav-label { line-height: 1; flex: 1; }
+        .ddc-nav-badge {
+          background: ${brand.blue};
+          color: #0a1550;
+          font-family: ${fonts.mono};
+          font-size: 10px;
+          font-weight: 800;
+          padding: 2px 7px;
+          border-radius: 10px;
+          min-width: 18px;
+          text-align: center;
+          margin-left: auto;
+        }
 
         .ddc-sidebar-foot {
           border-top: 1px solid rgba(77, 166, 255, 0.10);

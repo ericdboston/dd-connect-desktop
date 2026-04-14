@@ -2,11 +2,11 @@ import { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import ShellLayout from './pages/shell/ShellLayout';
-import PagePlaceholder from './pages/shell/PagePlaceholder';
 import DialpadPage from './pages/shell/DialpadPage';
 import ContactsPage from './pages/shell/ContactsPage';
 import RecentsPage from './pages/shell/RecentsPage';
 import VoicemailPage from './pages/shell/VoicemailPage';
+import ChatPage from './pages/shell/ChatPage';
 import SettingsPage from './pages/shell/SettingsPage';
 import IncomingCallPopup from './pages/IncomingCallPopup';
 import { useAuth } from './store/auth';
@@ -91,10 +91,7 @@ export default function App() {
           <Route path="contacts" element={<ContactsPage />} />
           <Route path="recents" element={<RecentsPage />} />
           <Route path="voicemail" element={<VoicemailPage />} />
-          <Route
-            path="chat"
-            element={<PagePlaceholder title="Chat" subtitle="Coming soon" />}
-          />
+          <Route path="chat" element={<ChatPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />

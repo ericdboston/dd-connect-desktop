@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../store/auth';
 import { useSip } from '../../store/sip';
 import { listExtensions, listRegistrations, type Extension } from '../../api/contacts';
+import { getOrCreateConversationByExtension } from '../../api/chat';
 import { extractErrorMessage } from '../../api/client';
 import { brand, fonts } from '../../theme';
 
@@ -83,10 +85,29 @@ export default function ContactsPage() {
     });
   }, [extensions, query]);
 
+  const navigate = useNavigate();
+  const [chatBusyExt, setChatBusyExt] = useState<string | null>(null);
+
   async function handleCall(number: string) {
     if (!isRegistered || currentCall) return;
     try { await makeCall(number); }
     catch (e) { console.warn('[contacts] makeCall failed', e); }
+  }
+
+  async function handleChat(peerExtension: string) {
+    if (!access || chatBusyExt || peerExtension === myExtension) return;
+    setChatBusyExt(peerExtension);
+    try {
+      const { conversation_id } = await getOrCreateConversationByExtension(
+        access, peerExtension,
+      );
+      navigate(`/shell/chat?conversation=${conversation_id}`);
+    } catch (e) {
+      console.warn('[contacts] get-or-create conversation failed', e);
+      setError(extractErrorMessage(e));
+    } finally {
+      setChatBusyExt(null);
+    }
   }
 
   return (
@@ -177,9 +198,15 @@ export default function ContactsPage() {
                 </button>
                 <button
                   className="ddc-contact-btn chat"
-                  onClick={() => { /* TODO: Chat module */ }}
-                  disabled
-                  title="Chat — coming in the Chat module"
+                  onClick={() => handleChat(ext.number)}
+                  disabled={isMe || chatBusyExt === ext.number}
+                  title={
+                    isMe
+                      ? 'Cannot chat with yourself'
+                      : chatBusyExt === ext.number
+                        ? 'Opening…'
+                        : `Chat with ${name}`
+                  }
                   aria-label={`Chat with ${name}`}
                 >
                   <span className="ddc-contact-icon">💬</span>
