@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import ShellLayout from './pages/shell/ShellLayout';
 import PagePlaceholder from './pages/shell/PagePlaceholder';
 import DialpadPage from './pages/shell/DialpadPage';
+import SettingsPage from './pages/shell/SettingsPage';
 import IncomingCallPopup from './pages/IncomingCallPopup';
 import { useAuth } from './store/auth';
 import { brand } from './theme';
@@ -100,10 +101,7 @@ export default function App() {
             path="chat"
             element={<PagePlaceholder title="Chat" subtitle="Coming soon" />}
           />
-          <Route
-            path="settings"
-            element={<PagePlaceholder title="Settings" subtitle="Coming soon" />}
-          />
+          <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

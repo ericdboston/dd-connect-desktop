@@ -71,8 +71,52 @@ export class SipClient {
   private registered = false;
   private remoteAudio: HTMLAudioElement | null = null;
 
+  // Audio device preferences — set by the Settings page via
+  // setInputDevice / setOutputDevice. Applied to new calls in makeCall
+  // and answerCall, and to the live remote <audio> element in
+  // attachRemoteAudio / setOutputDevice (output can switch mid-call,
+  // input requires a replaceTrack which we don't do in v0.1).
+  private inputDeviceId: string | undefined;
+  private outputDeviceId: string | undefined;
+
   constructor(config: SipClientConfig) {
     this.config = config;
+  }
+
+  setInputDevice(id: string | undefined): void {
+    this.inputDeviceId = id && id !== '' ? id : undefined;
+    console.log('[Sip] input device ->', this.inputDeviceId ?? '(default)');
+  }
+
+  setOutputDevice(id: string | undefined): void {
+    this.outputDeviceId = id && id !== '' ? id : undefined;
+    console.log('[Sip] output device ->', this.outputDeviceId ?? '(default)');
+    // If a call is already live, apply the change immediately to the
+    // remote audio element so the user hears the new output right away.
+    if (this.remoteAudio && this.outputDeviceId) {
+      this.applySinkId(this.remoteAudio, this.outputDeviceId);
+    }
+  }
+
+  private buildAudioConstraints(): MediaTrackConstraints | true {
+    if (this.inputDeviceId) {
+      return { deviceId: { exact: this.inputDeviceId } };
+    }
+    return true;
+  }
+
+  private applySinkId(el: HTMLAudioElement, sinkId: string): void {
+    // setSinkId is a Chromium-only HTMLMediaElement extension — not in
+    // the stock DOM lib types yet. Electron's renderer is Chromium so
+    // this works at runtime; cast to any to appease TS.
+    const elAny = el as unknown as {
+      setSinkId?: (id: string) => Promise<void>;
+    };
+    if (typeof elAny.setSinkId === 'function') {
+      elAny.setSinkId(sinkId).catch((e) => {
+        console.warn('[Sip] setSinkId failed', e);
+      });
+    }
   }
 
   // ---------- public surface (matches old VertoClient) ----------
@@ -187,7 +231,7 @@ export class SipClient {
 
     const inviter = new Inviter(this.ua, target, {
       sessionDescriptionHandlerOptions: {
-        constraints: { audio: true, video: false },
+        constraints: { audio: this.buildAudioConstraints(), video: false },
       },
     });
     this.currentSession = inviter;
@@ -208,7 +252,7 @@ export class SipClient {
     if (!(s instanceof Invitation)) return;
     await s.accept({
       sessionDescriptionHandlerOptions: {
-        constraints: { audio: true, video: false },
+        constraints: { audio: this.buildAudioConstraints(), video: false },
       },
     });
   }
@@ -335,6 +379,10 @@ export class SipClient {
       }
     }
     this.remoteAudio.srcObject = stream;
+    // Respect the user's selected output device (Settings page).
+    if (this.outputDeviceId) {
+      this.applySinkId(this.remoteAudio, this.outputDeviceId);
+    }
   }
 
   private detachRemoteAudio(): void {

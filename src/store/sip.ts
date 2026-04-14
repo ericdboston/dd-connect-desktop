@@ -16,6 +16,8 @@ interface SipState {
   isRegistered: boolean;
   currentCall: ActiveCall | null;
   muted: boolean;
+  audioInput: string | null;
+  audioOutput: string | null;
 
   init: (config: SipConfig) => void;
   destroy: () => void;
@@ -23,13 +25,20 @@ interface SipState {
   answerCall: () => Promise<void>;
   hangupCall: () => void;
   toggleMute: () => Promise<void>;
+  setAudioInput: (id: string) => Promise<void>;
+  setAudioOutput: (id: string) => Promise<void>;
 }
+
+const STORE_KEY_INPUT = 'audio:input';
+const STORE_KEY_OUTPUT = 'audio:output';
 
 export const useSip = create<SipState>((set, get) => ({
   client: null,
   isRegistered: false,
   currentCall: null,
   muted: false,
+  audioInput: null,
+  audioOutput: null,
 
   init(config) {
     // Idempotent by design — React StrictMode double-mounts the
@@ -108,6 +117,21 @@ export const useSip = create<SipState>((set, get) => ({
       set({ isRegistered: false });
     });
     set({ client });
+
+    // Hydrate persisted audio device preferences from electron-store
+    // and push them into the client. Settings page also calls the
+    // setter actions below when the user changes device selections.
+    void (async () => {
+      try {
+        const input = await window.ddconnect?.store.get<string>(STORE_KEY_INPUT);
+        const output = await window.ddconnect?.store.get<string>(STORE_KEY_OUTPUT);
+        if (input) client.setInputDevice(input);
+        if (output) client.setOutputDevice(output);
+        set({ audioInput: input ?? null, audioOutput: output ?? null });
+      } catch (e) {
+        console.warn('[sip] load device prefs failed', e);
+      }
+    })();
   },
 
   destroy() {
@@ -174,5 +198,21 @@ export const useSip = create<SipState>((set, get) => ({
     const next = !get().muted;
     await c.muteCall(next);
     set({ muted: next });
+  },
+
+  async setAudioInput(id) {
+    const c = get().client;
+    if (c) c.setInputDevice(id);
+    set({ audioInput: id });
+    try { await window.ddconnect?.store.set(STORE_KEY_INPUT, id); }
+    catch (e) { console.warn('[sip] persist audioInput failed', e); }
+  },
+
+  async setAudioOutput(id) {
+    const c = get().client;
+    if (c) c.setOutputDevice(id);
+    set({ audioOutput: id });
+    try { await window.ddconnect?.store.set(STORE_KEY_OUTPUT, id); }
+    catch (e) { console.warn('[sip] persist audioOutput failed', e); }
   },
 }));
