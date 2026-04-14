@@ -32,7 +32,12 @@ export const useSip = create<SipState>((set, get) => ({
   muted: false,
 
   init(config) {
-    if (get().client) return; // already initialized
+    // Idempotent by design — React StrictMode double-mounts the
+    // ShellLayout effect in dev, which would otherwise churn the
+    // VertoClient. The early-return here makes repeated calls safe.
+    // destroy() is only ever called from an explicit sign-out path,
+    // NOT from a React useEffect cleanup.
+    if (get().client) return;
 
     const client = new VertoClient({
       url: config.verto_url,

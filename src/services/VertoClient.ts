@@ -138,6 +138,14 @@ export class VertoClient {
   }
 
   async makeCall(destination: string): Promise<void> {
+    // Guard against a stale "registered" flag set against a socket
+    // that's since been closed. If we don't check this, sendRequest
+    // will queue the frame against a dead socket and reject it from
+    // the onclose handler's teardown — and the user sees a confusing
+    // "socket closed" error after ICE gathering has already spent 5s.
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket not connected. Please wait for registration.');
+    }
     if (!this.registered) throw new Error('Not registered');
     if (this.currentCallId) throw new Error('A call is already in progress');
 
@@ -232,7 +240,13 @@ export class VertoClient {
   // ---------- socket lifecycle ----------
 
   private openSocket(): void {
-    console.log('[Verto] opening', this.config.url);
+    // Regenerate the Verto session id on every fresh socket. If the
+    // same sessid is reused across reconnects, mod_verto dedupes the
+    // newer session against the older (still-teardown-pending) one
+    // and the older socket's close completes after the new one opens,
+    // producing "socket keeps closing" symptoms.
+    this.sessionId = randomUuid();
+    console.log('[Verto] opening', this.config.url, 'sessid:', this.sessionId.slice(0, 8));
     try {
       this.ws = new WebSocket(this.config.url);
     } catch (e) {
@@ -247,7 +261,16 @@ export class VertoClient {
     this.ws.onmessage = (e) => this.handleMessage(typeof e.data === 'string' ? e.data : '');
     this.ws.onerror = (e) => console.warn('[Verto] socket error', e);
     this.ws.onclose = (e) => {
-      console.log('[Verto] socket closed', e.code, e.reason);
+      // wasClean distinguishes client/server-initiated closes (1000/
+      // 1001/etc, wasClean=true) from abnormal network/proxy drops
+      // (typically 1006, wasClean=false). Essential diagnostic for
+      // untangling reconnect loops.
+      console.log(
+        '[Verto] socket closed',
+        'code=' + e.code,
+        'reason=' + (e.reason || '(none)'),
+        'wasClean=' + e.wasClean,
+      );
       // Reject any in-flight requests so callers don't hang forever.
       for (const [id, req] of this.pending) {
         clearTimeout(req.timer);

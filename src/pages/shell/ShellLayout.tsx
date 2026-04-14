@@ -33,11 +33,16 @@ export default function ShellLayout() {
   const currentCall = useSip((s) => s.currentCall);
 
   // Bring the Verto engine up as soon as the shell mounts with a valid
-  // session. Tear it down on unmount (sign-out triggers an unmount via
-  // the route guard redirecting to /login).
+  // session. Do NOT destroy on unmount — the VertoClient lives for the
+  // authed session lifetime, not the React component lifetime. React
+  // StrictMode double-mounts effects in dev which would churn the
+  // socket (open → close → open → close) and make mod_verto dedupe
+  // sessions, producing the "socket keeps closing" symptom we chased
+  // for hours. useSip.init() is idempotent (early-returns if a client
+  // already exists), so repeated mounts are safe. Destruction only
+  // happens on explicit sign-out below.
   useEffect(() => {
     if (sip_config) initSip(sip_config);
-    return () => { destroySip(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sip_config]);
 
