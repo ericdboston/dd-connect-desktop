@@ -7,6 +7,18 @@ import { brand, fonts } from '../../theme';
 
 const PAGE_SIZE = 50;
 
+// electron-store key for the "cleared before" ISO timestamp. CDRs with
+// a start_time strictly before this value are hidden from the list.
+// Pure client-side — the server CDR table is untouched.
+const CLEARED_BEFORE_KEY = 'recents:clearedBefore';
+
+// Matches caller_id_name values that are clearly machine-generated
+// junk and not real human names — short hex/alphanumeric tokens like
+// "u85s65me", "pttnh3hi", "3lg3mnc6on96", that leak through from
+// Verto/sofia NAT-traversal session identifiers. When the caller ID
+// name matches this pattern we fall back to showing the number alone.
+const JUNK_NAME_RE = /^[a-z0-9]{6,12}$/i;
+
 export default function RecentsPage() {
   const access = useAuth((s) => s.access);
   const myExtension = useAuth((s) => s.extension);
@@ -19,6 +31,7 @@ export default function RecentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [visible, setVisible] = useState(PAGE_SIZE);
+  const [clearedBefore, setClearedBefore] = useState<string | null>(null);
 
   const fetchCdrs = useCallback(async () => {
     if (!access) return;
@@ -32,11 +45,19 @@ export default function RecentsPage() {
     }
   }, [access]);
 
-  // Initial load.
+  // Initial load. Also reads the persisted clearedBefore timestamp so
+  // the filter is active immediately and doesn't flash the cleared
+  // records on screen before the hide kicks in.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      try {
+        const saved = await window.ddconnect?.store.get<string>(
+          CLEARED_BEFORE_KEY,
+        );
+        if (!cancelled && saved) setClearedBefore(saved);
+      } catch { /* noop */ }
       await fetchCdrs();
       if (!cancelled) setLoading(false);
     })();
@@ -59,8 +80,40 @@ export default function RecentsPage() {
     catch (e) { console.warn('[recents] redial failed', e); }
   }
 
-  const page = useMemo(() => cdrs.slice(0, visible), [cdrs, visible]);
-  const hasMore = visible < cdrs.length;
+  async function handleClearHistory() {
+    // Client-side clear: stash "now" as the cleared-before cutoff.
+    // Any CDR with start_time strictly earlier is hidden from this
+    // list. Server CDR table is untouched — refreshing restores the
+    // list only if new calls have been placed since the cutoff.
+    const confirmed = window.confirm(
+      'Clear visible call history?\n\n' +
+      'This hides current calls from your Recents list on this device. ' +
+      'The server CDR records are untouched.',
+    );
+    if (!confirmed) return;
+    const now = new Date().toISOString();
+    setClearedBefore(now);
+    try { await window.ddconnect?.store.set(CLEARED_BEFORE_KEY, now); }
+    catch (e) { console.warn('[recents] persist clearedBefore failed', e); }
+  }
+
+  // Apply the clearedBefore cutoff client-side so the filter survives
+  // reloads without needing the server to know anything about it.
+  const filteredCdrs = useMemo(() => {
+    if (!clearedBefore) return cdrs;
+    const cutoff = Date.parse(clearedBefore);
+    if (Number.isNaN(cutoff)) return cdrs;
+    return cdrs.filter((c) => {
+      const started = Date.parse(c.start_time);
+      return Number.isNaN(started) || started >= cutoff;
+    });
+  }, [cdrs, clearedBefore]);
+
+  const page = useMemo(
+    () => filteredCdrs.slice(0, visible),
+    [filteredCdrs, visible],
+  );
+  const hasMore = visible < filteredCdrs.length;
 
   return (
     <div className="ddc-recents">
@@ -68,7 +121,9 @@ export default function RecentsPage() {
         <h1 className="ddc-recents-title">Recents</h1>
         <div className="ddc-recents-actions">
           <div className="ddc-recents-count">
-            {loading ? 'Loading…' : `${cdrs.length} call${cdrs.length === 1 ? '' : 's'}`}
+            {loading
+              ? 'Loading…'
+              : `${filteredCdrs.length} call${filteredCdrs.length === 1 ? '' : 's'}`}
           </div>
           <button
             className="ddc-recents-refresh"
@@ -79,17 +134,29 @@ export default function RecentsPage() {
           >
             {refreshing ? '⟳' : '↻'}
           </button>
+          <button
+            className="ddc-recents-clear"
+            onClick={handleClearHistory}
+            disabled={loading || filteredCdrs.length === 0}
+            title="Clear visible history (client-side only)"
+          >
+            Clear
+          </button>
         </div>
       </div>
 
       {error && <div className="ddc-recents-error">{error}</div>}
 
-      {!loading && !error && cdrs.length === 0 && (
+      {!loading && !error && filteredCdrs.length === 0 && (
         <div className="ddc-recents-empty">
           <div className="ddc-recents-empty-icon">☎</div>
-          <div className="ddc-recents-empty-title">No calls yet</div>
+          <div className="ddc-recents-empty-title">
+            {cdrs.length > 0 ? 'History cleared' : 'No calls yet'}
+          </div>
           <div className="ddc-recents-empty-sub">
-            Calls you make and receive will appear here.
+            {cdrs.length > 0
+              ? 'New calls from this point forward will appear here.'
+              : 'Calls you make and receive will appear here.'}
           </div>
         </div>
       )}
@@ -144,7 +211,7 @@ export default function RecentsPage() {
             className="ddc-recents-more"
             onClick={() => setVisible((v) => v + PAGE_SIZE)}
           >
-            Show more ({cdrs.length - visible} remaining)
+            Show more ({filteredCdrs.length - visible} remaining)
           </button>
         </div>
       )}
@@ -199,6 +266,30 @@ export default function RecentsPage() {
         }
         .ddc-recents-refresh:disabled {
           opacity: 0.4;
+          cursor: not-allowed;
+        }
+
+        .ddc-recents-clear {
+          background: transparent;
+          border: 1px solid rgba(232, 19, 42, 0.45);
+          color: ${brand.red};
+          font-family: ${fonts.sans};
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+          padding: 8px 16px;
+          border-radius: 17px;
+          cursor: pointer;
+          transition: all 120ms ease;
+        }
+        .ddc-recents-clear:hover:not(:disabled) {
+          background: ${brand.red};
+          color: #fff;
+          border-color: ${brand.red};
+        }
+        .ddc-recents-clear:disabled {
+          opacity: 0.35;
           cursor: not-allowed;
         }
 
@@ -426,7 +517,13 @@ function displayNameFor(
   // For incoming and missed, show who called US
   const name = cdr.caller_id_name?.trim();
   const number = cdr.caller_id_number || '(unknown)';
-  if (name && name !== number && !name.startsWith('+')) {
+  // Reject the name if it's empty, matches the number, starts with
+  // '+' (likely a raw E.164 tagged as "name"), or matches the junk
+  // pattern (6–12 char alphanumeric — typical sofia/verto NAT
+  // session tokens that leak into caller_id_name).
+  const isJunk = !name || name === number || name.startsWith('+')
+    || JUNK_NAME_RE.test(name);
+  if (!isJunk) {
     return { primary: name, secondary: number };
   }
   return { primary: number, secondary: '' };
