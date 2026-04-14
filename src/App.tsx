@@ -6,6 +6,7 @@ import PagePlaceholder from './pages/shell/PagePlaceholder';
 import DialpadPage from './pages/shell/DialpadPage';
 import ContactsPage from './pages/shell/ContactsPage';
 import RecentsPage from './pages/shell/RecentsPage';
+import VoicemailPage from './pages/shell/VoicemailPage';
 import SettingsPage from './pages/shell/SettingsPage';
 import IncomingCallPopup from './pages/IncomingCallPopup';
 import { useAuth } from './store/auth';
@@ -89,10 +90,7 @@ export default function App() {
           <Route path="dialpad" element={<DialpadPage />} />
           <Route path="contacts" element={<ContactsPage />} />
           <Route path="recents" element={<RecentsPage />} />
-          <Route
-            path="voicemail"
-            element={<PagePlaceholder title="Voicemail" subtitle="Coming soon" />}
-          />
+          <Route path="voicemail" element={<VoicemailPage />} />
           <Route
             path="chat"
             element={<PagePlaceholder title="Chat" subtitle="Coming soon" />}
