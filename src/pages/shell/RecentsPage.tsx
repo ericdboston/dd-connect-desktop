@@ -19,6 +19,51 @@ const CLEARED_BEFORE_KEY = 'recents:clearedBefore';
 // name matches this pattern we fall back to showing the number alone.
 const JUNK_NAME_RE = /^[a-z0-9]{6,12}$/i;
 
+/**
+ * v0.1.1 — returns true if a phone number looks like SIP scanner
+ * noise rather than a real human caller / destination. The PBX is
+ * publicly exposed and receives constant INVITE probes from scanners
+ * worldwide using random alphanumeric "numbers" (cv2sqm8c, 726m9l14,
+ * 3341jzqp, ivr_bridge_6a575c92.invalid, etc.). These should never
+ * appear in Recents.
+ *
+ * Valid numbers we keep: NANP 10-digit, E.164 (+X...), short internal
+ * extensions (1-6 digits), and * / # service codes.
+ */
+function isJunkNumber(num: string | null | undefined): boolean {
+  if (!num) return true;
+  const s = num.trim();
+  if (!s) return true;
+  // E.164: starts with + followed by digits
+  if (/^\+\d{7,15}$/.test(s)) return false;
+  // NANP 10-11 digit (with optional leading 1)
+  if (/^1?\d{10}$/.test(s)) return false;
+  // Short internal extension: 1-6 pure digits
+  if (/^\d{1,6}$/.test(s)) return false;
+  // Service codes like *97, *98, #31#, etc.
+  if (/^[*#]/.test(s)) return false;
+  // Everything else is junk — random alpha tokens, .invalid URIs,
+  // ivr_bridge hashes, SIP scanner fingerprints
+  return true;
+}
+
+/**
+ * Returns true if the CDR entry should be hidden from Recents.
+ * Filters scanner noise AND self-calls (extension calling itself,
+ * typically voicemail-check loops or test probes).
+ */
+function isHiddenEntry(cdr: CdrRecord, myExt: string): boolean {
+  // Scanner noise: the "other party" number is junk
+  const otherNumber =
+    cdr.caller_id_number === myExt
+      ? cdr.destination_number
+      : cdr.caller_id_number;
+  if (isJunkNumber(otherNumber)) return true;
+  // Self-calls: both caller and destination are my own extension
+  if (cdr.caller_id_number === myExt && cdr.destination_number === myExt) return true;
+  return false;
+}
+
 export default function RecentsPage() {
   const access = useAuth((s) => s.access);
   const myExtension = useAuth((s) => s.extension);
@@ -97,17 +142,25 @@ export default function RecentsPage() {
     catch (e) { console.warn('[recents] persist clearedBefore failed', e); }
   }
 
-  // Apply the clearedBefore cutoff client-side so the filter survives
-  // reloads without needing the server to know anything about it.
+  // Apply the clearedBefore cutoff + junk/self-call filter so the
+  // displayed list is clean. Pure client-side — the server CDR table
+  // is untouched and the full history is still available via API.
   const filteredCdrs = useMemo(() => {
-    if (!clearedBefore) return cdrs;
-    const cutoff = Date.parse(clearedBefore);
-    if (Number.isNaN(cutoff)) return cdrs;
-    return cdrs.filter((c) => {
-      const started = Date.parse(c.start_time);
-      return Number.isNaN(started) || started >= cutoff;
-    });
-  }, [cdrs, clearedBefore]);
+    let result = cdrs;
+    // v0.1.1 — hide scanner noise and self-calls
+    result = result.filter((c) => !isHiddenEntry(c, myExtension ?? ''));
+    // Cleared-before cutoff
+    if (clearedBefore) {
+      const cutoff = Date.parse(clearedBefore);
+      if (!Number.isNaN(cutoff)) {
+        result = result.filter((c) => {
+          const started = Date.parse(c.start_time);
+          return Number.isNaN(started) || started >= cutoff;
+        });
+      }
+    }
+    return result;
+  }, [cdrs, clearedBefore, myExtension]);
 
   const page = useMemo(
     () => filteredCdrs.slice(0, visible),
@@ -480,27 +533,47 @@ interface CallClass {
 }
 
 function classifyCall(cdr: CdrRecord, myExt: string): CallClass {
-  // 'local' direction is internal ext-to-ext — treat as outbound from
-  // our perspective if the caller matches the current user's ext, else
-  // as inbound.
-  const effective =
-    cdr.direction === 'local'
-      ? cdr.caller_id_number === myExt
-        ? 'outbound'
-        : 'inbound'
-      : cdr.direction;
+  // v0.1.1 — classify based on WHO the parties are, not on FS's
+  // direction field (which reflects FreeSWITCH's perspective, not the
+  // user's). When a call comes IN from the IVR bridge, FS records the
+  // bridge leg as direction='local' or even 'outbound' (FS originated
+  // a call TO ext 1001 from the bridge), but the user experienced it
+  // as an incoming call. Using caller/destination comparison gives a
+  // user-centric classification that matches what the phone showed.
+  const isFromMe = cdr.caller_id_number === myExt;
+  const isToMe = cdr.destination_number === myExt;
 
-  if (effective === 'inbound') {
+  // Inbound: someone called me
+  if (isToMe && !isFromMe) {
     if (cdr.was_answered) {
       return { tone: 'inbound', arrow: '↙', label: 'Incoming' };
     }
+    // v0.1.1 — previously this path returned "No answer" when FS
+    // recorded the leg as direction='outbound' (bridge TO me). Now
+    // it returns "Missed" because from the user's perspective the
+    // phone rang and they didn't pick up.
     return { tone: 'missed', arrow: '↙', label: 'Missed' };
   }
-  // outbound
-  if (cdr.was_answered) {
-    return { tone: 'outbound', arrow: '↗', label: 'Outgoing' };
+
+  // Outbound: I called someone else
+  if (isFromMe && !isToMe) {
+    if (cdr.was_answered) {
+      return { tone: 'outbound', arrow: '↗', label: 'Outgoing' };
+    }
+    return { tone: 'noanswer', arrow: '↗', label: 'No answer' };
   }
-  return { tone: 'noanswer', arrow: '↗', label: 'No answer' };
+
+  // Fallback for ambiguous cases (neither party matches my ext, or
+  // both match which shouldn't happen since self-calls are filtered).
+  // Use FS's direction field as a last resort.
+  if (cdr.direction === 'inbound' || (cdr.direction === 'local' && !isFromMe)) {
+    return cdr.was_answered
+      ? { tone: 'inbound', arrow: '↙', label: 'Incoming' }
+      : { tone: 'missed', arrow: '↙', label: 'Missed' };
+  }
+  return cdr.was_answered
+    ? { tone: 'outbound', arrow: '↗', label: 'Outgoing' }
+    : { tone: 'noanswer', arrow: '↗', label: 'No answer' };
 }
 
 function displayNameFor(
