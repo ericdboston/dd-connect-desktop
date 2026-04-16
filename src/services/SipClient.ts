@@ -34,6 +34,7 @@ import {
   Session,
   SessionState,
 } from 'sip.js';
+import { sounds } from './Sounds';
 
 export interface SipClientConfig {
   /** wss://portal.decisivedatatech.com:7443 */
@@ -236,11 +237,17 @@ export class SipClient {
     });
     this.currentSession = inviter;
     this.setupSession(inviter);
+    // v0.1.1 — start synthesized ringback while the callee's phone is
+    // ringing. Stopped in setupSession() on any transition out of
+    // Establishing (Established = call went live, Terminated = callee
+    // rejected or bailed out).
+    sounds.startRingback();
 
     try {
       await inviter.invite();
     } catch (err) {
       console.warn('[Sip] invite failed, cleaning up', err);
+      sounds.stopRingback();
       this.currentSession = null;
       this.detachRemoteAudio();
       throw err;
@@ -318,6 +325,11 @@ export class SipClient {
     );
     this.currentSession = invitation;
     this.setupSession(invitation);
+    // v0.1.1 — start the incoming ringtone. Stopped in setupSession()
+    // on Established (user answered) or Terminated (caller cancelled,
+    // we rejected, or FS CANCELled the fork because another contact
+    // picked up first).
+    sounds.startIncomingRingtone();
 
     const caller = invitation.remoteIdentity;
     this.emit('incomingCall', {
@@ -332,13 +344,24 @@ export class SipClient {
       console.log('[Sip] session state', state);
       switch (state) {
         case SessionState.Established:
+          // v0.1.1 — stop whichever tone was playing. Ringback on
+          // outbound or incoming ringtone on inbound; either way it's
+          // now irrelevant because we have real remote audio to attach.
+          sounds.stopRingback();
+          sounds.stopIncomingRingtone();
           this.attachRemoteAudio(session);
           this.emit('callAnswered');
           break;
         case SessionState.Terminating:
         case SessionState.Terminated:
+          // v0.1.1 — stop tones on every termination path: remote BYE,
+          // FS CANCEL of a fork leg, outbound that never connected.
+          // Must run BEFORE the currentSession===session guard below
+          // so stale sessions still kill their tones.
+          sounds.stopRingback();
+          sounds.stopIncomingRingtone();
           // If the user already hung up locally, currentSession was
-          // nulled in hangupCall() — don't double-emit.
+          // nulled in hangupCall() — don't double-emit callEnded.
           if (this.currentSession === session) {
             this.currentSession = null;
             this.detachRemoteAudio();

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSip } from '../../store/sip';
 import { brand, fonts } from '../../theme';
+import { sounds } from '../../services/Sounds';
 
 interface KeyDef {
   digit: string;
@@ -39,6 +40,7 @@ export default function DialpadPage() {
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
 
       if (/^[0-9*#]$/.test(e.key)) {
+        sounds.playDtmf(e.key);
         setDigits((d) => d + e.key);
         e.preventDefault();
       } else if (e.key === 'Backspace') {
@@ -58,6 +60,11 @@ export default function DialpadPage() {
   }, [digits]);
 
   function press(key: string) {
+    // v0.1.1 — local DTMF click on every button press (synthesized,
+    // no audio file bundled). The digit is appended to the dial-string
+    // regardless so the dialpad still works silently if the audio
+    // context fails to resume.
+    sounds.playDtmf(key);
     setDigits((d) => d + key);
     setError(null);
   }
