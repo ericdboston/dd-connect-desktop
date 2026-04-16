@@ -103,7 +103,7 @@ export default function LoginPage() {
       <div className="ddc-content">
         {/* Logo */}
         <img
-          src="/ddconnect-logo.png"
+          src="./ddconnect-logo.png"
           alt="DD Connect"
           style={{ width: 140, height: 140, objectFit: 'contain', marginBottom: 0, display: 'block' }}
         />

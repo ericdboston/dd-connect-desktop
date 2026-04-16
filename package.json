@@ -1,6 +1,6 @@
 {
   "name": "ddconnect-desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "DD Connect Desktop — Electron softphone for DDTG PBX",
   "private": true,
   "author": "Decisive Data Technology Group",

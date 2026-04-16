@@ -58,7 +58,7 @@ export default function IncomingCallPopup() {
     <div className="ddc-incoming">
       <div className="ddc-incoming-header">
         <img
-          src="/ddconnect-logo.png"
+          src="./ddconnect-logo.png"
           alt="DD Connect"
           className="ddc-incoming-logo"
         />

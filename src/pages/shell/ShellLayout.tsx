@@ -87,7 +87,7 @@ export default function ShellLayout() {
       {/* Sidebar */}
       <aside className="ddc-sidebar">
         <div className="ddc-sidebar-brand">
-          <img src="/ddconnect-logo.png" alt="DD Connect" className="ddc-sidebar-logo" />
+          <img src="./ddconnect-logo.png" alt="DD Connect" className="ddc-sidebar-logo" />
           <span className="ddc-sidebar-brand-text">DD Connect</span>
         </div>
 
