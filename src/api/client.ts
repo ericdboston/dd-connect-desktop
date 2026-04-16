@@ -1,16 +1,39 @@
 import axios, { AxiosError, AxiosInstance } from 'axios';
 
-// Portal base URL. Overridable via a build-time env so a dev can point
-// at a staging host without patching code. In release builds we pin to
-// production and rely on Electron auto-updates to roll out changes.
-export const API_BASE =
+// Portal base URL. Default can be overridden at build time (VITE_API_BASE
+// env) or at runtime via setApiBase() when the user changes the server
+// field on the login screen (v0.1.4). In release builds the default is
+// production; multi-tenant / dev scenarios change it from the login page.
+const DEFAULT_API_BASE =
   import.meta.env.VITE_API_BASE ?? 'https://portal.decisivedatatech.com';
+
+let _apiBase: string = DEFAULT_API_BASE;
+
+/** Current portal base URL (without trailing slash). */
+export function getApiBase(): string {
+  return _apiBase;
+}
+
+/** Change the portal base URL at runtime. Drops the cached axios
+ *  instance so the next getApi() call creates a fresh one pointing at
+ *  the new host. Called by the login page when the user changes the
+ *  Server field, and by auth.hydrate() when restoring a saved session
+ *  that was originally logged in against a non-default server. */
+export function setApiBase(url: string): void {
+  _apiBase = url.replace(/\/+$/, '') || DEFAULT_API_BASE;
+  _api = null;
+}
+
+// Keep the old export name alive for any call site that reads it
+// directly (e.g. auth.ts refreshAccessToken). They should use
+// getApiBase() instead, but this avoids a breaking rename.
+export const API_BASE = DEFAULT_API_BASE;
 
 let _api: AxiosInstance | null = null;
 
 function createApiInstance(): AxiosInstance {
   const instance = axios.create({
-    baseURL: API_BASE,
+    baseURL: _apiBase,
     timeout: 15000,
     headers: {
       'Content-Type': 'application/json',

@@ -1,11 +1,13 @@
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, useRef, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ddconnectLogin } from '../api/auth';
-import { extractErrorMessage } from '../api/client';
+import { extractErrorMessage, setApiBase } from '../api/client';
 import { useAuth } from '../store/auth';
 import { brand, fonts } from '../theme';
 
 const REMEMBER_KEY = 'login:rememberedExtension';
+const SERVER_KEY = 'login:serverUrl';
+const DEFAULT_SERVER = 'https://portal.decisivedatatech.com';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -13,17 +15,67 @@ export default function LoginPage() {
 
   const [extension, setExtension] = useState('');
   const [password, setPassword] = useState('');
+  const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER);
+  const [showServer, setShowServer] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoLoginAttempted = useRef(false);
 
+  // Restore remembered extension + server, then check CLI provision args
   useEffect(() => {
     (async () => {
       try {
-        const saved = await window.ddconnect?.store.get<string>(REMEMBER_KEY);
-        if (saved) setExtension(saved);
+        const savedExt = await window.ddconnect?.store.get<string>(REMEMBER_KEY);
+        if (savedExt) setExtension(savedExt);
+        const savedServer = await window.ddconnect?.store.get<string>(SERVER_KEY);
+        if (savedServer) {
+          setServerUrl(savedServer);
+          setApiBase(savedServer);
+        }
       } catch { /* electron-store unavailable — ignore */ }
+
+      // v0.1.4 — CLI provisioning auto-login. If the app was launched
+      // with --extension and --password, auto-submit the login form
+      // exactly once on first mount. The customer never sees the login
+      // screen — the app goes straight to the dialpad.
+      if (autoLoginAttempted.current) return;
+      autoLoginAttempted.current = true;
+      try {
+        const args = await window.ddconnect?.provision?.getArgs();
+        if (args?.extension && args?.password) {
+          const srv = args.server
+            ? (args.server.startsWith('http') ? args.server : `https://${args.server}`)
+            : DEFAULT_SERVER;
+          setApiBase(srv);
+          setServerUrl(srv);
+          setExtension(args.extension);
+          setLoading(true);
+          const res = await ddconnectLogin(args.extension, args.password);
+          await setSession(
+            {
+              access: res.access,
+              refresh: res.refresh,
+              extension: res.sip_config.extension,
+              display_name: res.sip_config.display_name,
+              sip_config: res.sip_config,
+              serverUrl: srv,
+            },
+            true, // always Remember Me for provisioned logins
+          );
+          try { await window.ddconnect?.store.set(REMEMBER_KEY, args.extension); } catch { /* noop */ }
+          try { await window.ddconnect?.store.set(SERVER_KEY, srv); } catch { /* noop */ }
+          navigate('/shell', { replace: true });
+          return;
+        }
+      } catch (e) {
+        console.warn('[login] CLI auto-login failed:', e);
+        setLoading(false);
+        // Fall through to manual login — don't surface the error since
+        // the user didn't initiate this attempt.
+      }
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleSubmit(e: FormEvent) {
@@ -37,6 +89,10 @@ export default function LoginPage() {
       return;
     }
 
+    // v0.1.4 — apply the user's server URL before attempting login
+    const srv = serverUrl.trim() || DEFAULT_SERVER;
+    setApiBase(srv);
+
     setLoading(true);
     try {
       const res = await ddconnectLogin(ext, password);
@@ -47,13 +103,16 @@ export default function LoginPage() {
           extension: res.sip_config.extension,
           display_name: res.sip_config.display_name,
           sip_config: res.sip_config,
+          serverUrl: srv,
         },
         remember,
       );
       if (remember) {
         try { await window.ddconnect?.store.set(REMEMBER_KEY, ext); } catch { /* noop */ }
+        try { await window.ddconnect?.store.set(SERVER_KEY, srv); } catch { /* noop */ }
       } else {
         try { await window.ddconnect?.store.delete(REMEMBER_KEY); } catch { /* noop */ }
+        try { await window.ddconnect?.store.delete(SERVER_KEY); } catch { /* noop */ }
       }
       navigate('/shell', { replace: true });
     } catch (err) {
@@ -61,6 +120,14 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleForgotPassword() {
+    const base = serverUrl.trim() || DEFAULT_SERVER;
+    const url = base.replace(/\/+$/, '');
+    window.ddconnect?.openExternal?.(`${url}/`).catch(() => {
+      window.open(`${url}/`, '_blank');
+    });
   }
 
   return (
@@ -113,6 +180,32 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="ddc-form">
+          {/* Server URL — collapsible, pre-filled. Most customers
+              never need to touch this; advanced / multi-tenant users
+              can expand it to point at a different portal. */}
+          <button
+            type="button"
+            className="ddc-server-toggle"
+            onClick={() => setShowServer(!showServer)}
+          >
+            {showServer ? '▾' : '▸'} Server{!showServer && <span className="ddc-server-hint">{serverUrl.replace(/^https?:\/\//, '')}</span>}
+          </button>
+          {showServer && (
+            <>
+              <label className="ddc-label" htmlFor="srv">SERVER URL</label>
+              <input
+                id="srv"
+                type="text"
+                autoComplete="url"
+                placeholder="https://portal.decisivedatatech.com"
+                value={serverUrl}
+                onChange={(e) => setServerUrl(e.target.value)}
+                disabled={loading}
+                className="ddc-input"
+              />
+            </>
+          )}
+
           <label className="ddc-label" htmlFor="ext">EXTENSION</label>
           <input
             id="ext"
@@ -138,15 +231,20 @@ export default function LoginPage() {
             className="ddc-input"
           />
 
-          <label className="ddc-remember">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              disabled={loading}
-            />
-            <span>Remember me</span>
-          </label>
+          <div className="ddc-form-row">
+            <label className="ddc-remember">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                disabled={loading}
+              />
+              <span>Remember me</span>
+            </label>
+            <button type="button" className="ddc-forgot" onClick={handleForgotPassword}>
+              Forgot password?
+            </button>
+          </div>
 
           <button type="submit" disabled={loading} className="ddc-submit">
             {loading ? 'SIGNING IN…' : 'SIGN IN'}
@@ -247,6 +345,47 @@ export default function LoginPage() {
           text-transform: uppercase;
         }
 
+        .ddc-server-toggle {
+          background: none;
+          border: none;
+          color: #6b7ba8;
+          font-family: ${fonts.sans};
+          font-size: 11px;
+          letter-spacing: 2px;
+          cursor: pointer;
+          text-align: left;
+          padding: 0;
+          margin-bottom: 4px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .ddc-server-toggle:hover { color: #8aa0d8; }
+        .ddc-server-hint {
+          color: #4a5a80;
+          font-family: ${fonts.mono};
+          font-size: 10px;
+          letter-spacing: 0.5px;
+          margin-left: 4px;
+        }
+        .ddc-form-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin: 22px 0 24px;
+        }
+        .ddc-forgot {
+          background: none;
+          border: none;
+          color: #4da6ff;
+          font-family: ${fonts.sans};
+          font-size: 12px;
+          letter-spacing: 0.5px;
+          cursor: pointer;
+          padding: 0;
+        }
+        .ddc-forgot:hover { text-decoration: underline; }
+
         .ddc-form {
           width: 100%;
           display: flex;
@@ -289,7 +428,6 @@ export default function LoginPage() {
           color: #c8d4f5;
           font-size: 13px;
           letter-spacing: 1px;
-          margin: 22px 0 24px;
           cursor: pointer;
           user-select: none;
         }

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { SipConfig } from '../api/types';
-import { resetApiInstance } from '../api/client';
+import { resetApiInstance, setApiBase } from '../api/client';
 
 // Persisted slice — mirrored into electron-store for reboot survival
 // when "Remember me" is on. We deliberately omit the raw SIP password
@@ -11,6 +11,9 @@ export interface PersistedAuth {
   extension: string;
   display_name: string;
   sip_config: SipConfig;
+  // v0.1.4 — portal server the user logged into (may differ from the
+  // default if the user changed the Server field on the login screen).
+  serverUrl?: string;
 }
 
 interface AuthState extends Partial<PersistedAuth> {
@@ -32,6 +35,11 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const saved = await window.ddconnect.store.get<PersistedAuth>(STORE_KEY);
       if (saved && saved.access && saved.refresh && saved.extension) {
+        // v0.1.4 — restore the server URL the user logged into so API
+        // calls go to the right host even if the default changed.
+        if (saved.serverUrl) {
+          setApiBase(saved.serverUrl);
+        }
         set({
           ...saved,
           isAuthed: true,

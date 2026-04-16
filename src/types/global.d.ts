@@ -11,6 +11,16 @@ declare global {
     ddconnect: {
       platform: NodeJS.Platform;
       version: string;
+      // v0.1.4 — CLI provisioning args for customer zero-touch setup
+      provision: {
+        getArgs: () => Promise<{
+          extension?: string;
+          password?: string;
+          server?: string;
+        }>;
+      };
+      // v0.1.4 — open a URL in the user's default browser
+      openExternal: (url: string) => Promise<void>;
       store: {
         get: <T = unknown>(key: string) => Promise<T | undefined>;
         set: (key: string, value: unknown) => Promise<void>;

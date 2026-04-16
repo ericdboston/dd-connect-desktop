@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { API_BASE, getApi } from './client';
+import { getApiBase, getApi } from './client';
 import type { LoginResponse } from './types';
 
 export async function ddconnectLogin(
@@ -47,7 +47,7 @@ export async function getMe(accessToken: string): Promise<MeResponse> {
  */
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
   const res = await axios.post<{ access: string }>(
-    `${API_BASE}/api/auth/refresh/`,
+    `${getApiBase()}/api/auth/refresh/`,
     { refresh: refreshToken },
     {
       headers: { 'Content-Type': 'application/json' },

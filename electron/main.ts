@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import {
   openIncomingCallWindow,
@@ -11,6 +11,42 @@ import {
 app.disableHardwareAcceleration();
 
 const isDev = !app.isPackaged;
+
+// ---------- CLI provisioning args (v0.1.4) ----------
+//
+// DDTG provisions a customer by running:
+//   "DD Connect Desktop.exe" --extension 1001 --password xxx --server portal.decisivedatatech.com
+//
+// The app detects these args on first launch, auto-logs in, saves the
+// session with Remember Me ON, and goes straight to the dialpad. Customer
+// relaunches normally → session is restored → zero manual entry.
+function parseProvisionArgs(): {
+  extension?: string;
+  password?: string;
+  server?: string;
+} {
+  const args = process.argv.slice(isDev ? 2 : 1);
+  const result: Record<string, string> = {};
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    for (const key of ['extension', 'password', 'server'] as const) {
+      if (a === `--${key}` && args[i + 1]) {
+        result[key] = args[++i];
+      } else if (a.startsWith(`--${key}=`)) {
+        result[key] = a.split('=').slice(1).join('=');
+      }
+    }
+  }
+  return result;
+}
+
+const provisionArgs = parseProvisionArgs();
+if (provisionArgs.extension) {
+  console.log(`[main] provision args: ext=${provisionArgs.extension} server=${provisionArgs.server ?? '(default)'}`);
+}
+
+ipcMain.handle('provision:args', () => provisionArgs);
+ipcMain.handle('open-external', (_e, url: string) => shell.openExternal(url));
 
 // electron-store v10 is ESM-only. We dynamic-import it inside an async
 // factory and cache the instance. Alternative (converting the whole

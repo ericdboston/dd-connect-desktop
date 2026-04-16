@@ -6,6 +6,19 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('ddconnect', {
   platform: process.platform,
   version: process.versions.electron,
+  // v0.1.4 — CLI provisioning args for customer zero-touch setup
+  provision: {
+    getArgs: (): Promise<{
+      extension?: string;
+      password?: string;
+      server?: string;
+    }> => ipcRenderer.invoke('provision:args'),
+  },
+  // v0.1.4 — open a URL in the user's default browser (used by
+  // "Forgot password?" link on the login screen). shell.openExternal
+  // is a main-process API so we tunnel through IPC.
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke('open-external', url),
   store: {
     get: <T = unknown>(key: string): Promise<T | undefined> =>
       ipcRenderer.invoke('store:get', key),
