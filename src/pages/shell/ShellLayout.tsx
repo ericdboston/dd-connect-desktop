@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../store/auth';
 import { useSip } from '../../store/sip';
 import { useChatUnread } from '../../store/chat';
+import { getApi } from '../../api/client';
 import ActiveCallPage from './ActiveCallPage';
 import { brand, fonts } from '../../theme';
 
@@ -33,6 +34,7 @@ export default function ShellLayout() {
   const refreshChatUnread = useChatUnread((s) => s.refresh);
   const resetChatUnread = useChatUnread((s) => s.reset);
   const location = useLocation();
+  const [vmUnread, setVmUnread] = useState(0);
 
   const isRegistered = useSip((s) => s.isRegistered);
   const initSip = useSip((s) => s.init);
@@ -67,6 +69,24 @@ export default function ShellLayout() {
     return () => clearInterval(timer);
   }, [access, refreshChatUnread]);
 
+  // Poll voicemail unread count for the sidebar badge — same pattern as chat.
+  useEffect(() => {
+    if (!access || !extension) return;
+    const domain = sip_config?.sip_domain || 'lab.ddtg.local';
+    const fetchVm = async () => {
+      try {
+        const res = await getApi().get(`/api/pbx/voicemail-inbox/counts/`, {
+          params: { extension, domain },
+          headers: { Authorization: `Bearer ${access}` },
+        });
+        setVmUnread(res.data?.unread ?? 0);
+      } catch { /* ignore */ }
+    };
+    void fetchVm();
+    const timer = setInterval(fetchVm, 30_000);
+    return () => clearInterval(timer);
+  }, [access, extension, sip_config?.sip_domain]);
+
   async function signOut() {
     resetChatUnread();
     destroySip();
@@ -93,9 +113,11 @@ export default function ShellLayout() {
 
         <nav className="ddc-nav">
           {NAV_ITEMS.map((item) => {
-            const badge = item.to === '/shell/chat' && chatUnread > 0
-              ? (chatUnread > 99 ? '99+' : String(chatUnread))
-              : null;
+            let badge: string | null = null;
+            if (item.to === '/shell/chat' && chatUnread > 0)
+              badge = chatUnread > 99 ? '99+' : String(chatUnread);
+            if (item.to === '/shell/voicemail' && vmUnread > 0)
+              badge = vmUnread > 99 ? '99+' : String(vmUnread);
             return (
               <NavLink
                 key={item.to}
