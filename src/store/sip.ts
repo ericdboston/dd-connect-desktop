@@ -24,6 +24,7 @@ interface SipState {
   makeCall: (number: string) => Promise<void>;
   answerCall: () => Promise<void>;
   hangupCall: () => void;
+  blindTransfer: (destination: string) => Promise<void>;
   toggleMute: () => Promise<void>;
   setAudioInput: (id: string) => Promise<void>;
   setAudioOutput: (id: string) => Promise<void>;
@@ -190,6 +191,11 @@ export const useSip = create<SipState>((set, get) => ({
     const c = get().client;
     if (c) { void c.hangupCall(); }
     set({ currentCall: null, muted: false });
+  },
+
+  async blindTransfer(destination: string) {
+    const c = get().client;
+    if (c) { await c.blindTransfer(destination); }
   },
 
   async toggleMute() {

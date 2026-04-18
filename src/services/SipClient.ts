@@ -291,6 +291,19 @@ export class SipClient {
     this.emit('callEnded');
   }
 
+  async blindTransfer(destination: string): Promise<void> {
+    const s = this.currentSession;
+    if (!s) return;
+    const target = UserAgent.makeURI(
+      destination.includes('@')
+        ? `sip:${destination}`
+        : `sip:${destination}@${this.config?.domain || 'lab.ddtg.local'}`,
+    );
+    if (target) {
+      await s.refer(target);
+    }
+  }
+
   async muteCall(muted: boolean): Promise<void> {
     const s = this.currentSession;
     if (!s) return;

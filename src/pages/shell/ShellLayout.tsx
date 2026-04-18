@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/shell/recents', label: 'Recents', icon: '🕐' },
   { to: '/shell/voicemail', label: 'Voicemail', icon: '📬' },
   { to: '/shell/chat', label: 'Chat', icon: '💬' },
+  { to: '/shell/sms', label: 'SMS', icon: '📱' },
   { to: '/shell/settings', label: 'Settings', icon: '⚙️' },
 ];
 

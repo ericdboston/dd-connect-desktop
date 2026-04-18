@@ -1,17 +1,44 @@
 import { useEffect, useState } from 'react';
 import { useSip } from '../../store/sip';
 import { brand, fonts } from '../../theme';
+import { fetchParkSlots } from '../../api/sms';
+import type { ParkSlot } from '../../api/types';
 
 export default function ActiveCallPage() {
   const currentCall = useSip((s) => s.currentCall);
   const muted = useSip((s) => s.muted);
   const toggleMute = useSip((s) => s.toggleMute);
   const hangupCall = useSip((s) => s.hangupCall);
+  const blindTransfer = useSip((s) => s.blindTransfer);
 
   const [held, setHeld] = useState(false);
-  const [speaker, setSpeaker] = useState(false);
   const [keypadOpen, setKeypadOpen] = useState(false);
+  const [parkOpen, setParkOpen] = useState(false);
+  const [parkSlots, setParkSlots] = useState<ParkSlot[]>([]);
   const [seconds, setSeconds] = useState(0);
+
+  const loadParkSlots = async () => {
+    try {
+      const data = await fetchParkSlots();
+      setParkSlots(data.slots);
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    if (!parkOpen) return;
+    loadParkSlots();
+    const timer = setInterval(loadParkSlots, 3000);
+    return () => clearInterval(timer);
+  }, [parkOpen]);
+
+  const handleParkSlot = async (slot: ParkSlot) => {
+    setParkOpen(false);
+    if (slot.occupied) {
+      await blindTransfer(String(slot.slot));
+    } else {
+      await blindTransfer(`*77${slot.slot}`);
+    }
+  };
 
   // Tick the call duration only while the call is in the connected
   // state. Reset to zero whenever a new call mounts the component.
@@ -78,20 +105,40 @@ export default function ActiveCallPage() {
           stub
         />
         <ControlButton
+          icon="🅿️"
+          label="Park"
+          active={parkOpen}
+          onClick={() => setParkOpen((p) => !p)}
+        />
+        <ControlButton
           icon="⌨"
           label="Keypad"
           active={keypadOpen}
           onClick={() => setKeypadOpen((k) => !k)}
           stub
         />
-        <ControlButton
-          icon="🔊"
-          label="Speaker"
-          active={speaker}
-          onClick={() => setSpeaker((s) => !s)}
-          stub
-        />
       </div>
+
+      {parkOpen && (
+        <div className="ddc-park-panel">
+          <div className="ddc-park-title">Park Slots</div>
+          <div className="ddc-park-grid">
+            {parkSlots.map((ps) => (
+              <button
+                key={ps.slot}
+                className={`ddc-park-slot ${ps.occupied ? 'occupied' : 'available'}`}
+                onClick={() => { void handleParkSlot(ps); }}
+                type="button"
+              >
+                <span className="ddc-park-slot-num">{ps.slot}</span>
+                {ps.occupied && ps.caller_id_number && (
+                  <span className="ddc-park-slot-cid">{ps.caller_id_name || ps.caller_id_number}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <button className="ddc-call-end" onClick={hangupCall} type="button">
         <span className="ddc-call-end-icon">⌃</span>
@@ -235,6 +282,48 @@ export default function ActiveCallPage() {
         }
         .ddc-call-end:hover { filter: brightness(1.1); }
         .ddc-call-end-icon { font-size: 18px; line-height: 1; }
+
+        .ddc-park-panel {
+          width: 100%;
+          max-width: 420px;
+          padding: 16px;
+          background: rgba(15, 27, 45, 0.9);
+          border: 1px solid ${brand.border};
+          border-radius: 12px;
+        }
+        .ddc-park-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: ${brand.textMuted};
+          text-transform: uppercase;
+          letter-spacing: 1.5px;
+          margin-bottom: 12px;
+          text-align: center;
+        }
+        .ddc-park-grid {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 8px;
+        }
+        .ddc-park-slot {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 10px 4px;
+          border-radius: 8px;
+          border: 1px solid ${brand.border};
+          background: rgba(255,255,255,0.04);
+          cursor: pointer;
+          font-family: ${fonts.sans};
+          color: ${brand.white};
+          transition: border-color 120ms;
+        }
+        .ddc-park-slot:hover { border-color: ${brand.blue}; }
+        .ddc-park-slot.available { border-color: rgba(34,197,94,0.3); }
+        .ddc-park-slot.occupied { border-color: rgba(232,19,42,0.3); background: rgba(232,19,42,0.08); }
+        .ddc-park-slot-num { font-family: ${fonts.mono}; font-size: 14px; font-weight: 600; }
+        .ddc-park-slot-cid { font-size: 9px; color: ${brand.textMuted}; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70px; }
       `}</style>
     </div>
   );

@@ -8,6 +8,7 @@ import RecentsPage from './pages/shell/RecentsPage';
 import VoicemailPage from './pages/shell/VoicemailPage';
 import ChatPage from './pages/shell/ChatPage';
 import SettingsPage from './pages/shell/SettingsPage';
+import SmsPage from './pages/shell/SmsPage';
 import IncomingCallPopup from './pages/IncomingCallPopup';
 import { useAuth } from './store/auth';
 import { brand } from './theme';
@@ -92,6 +93,7 @@ export default function App() {
           <Route path="recents" element={<RecentsPage />} />
           <Route path="voicemail" element={<VoicemailPage />} />
           <Route path="chat" element={<ChatPage />} />
+          <Route path="sms" element={<SmsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
