@@ -324,6 +324,28 @@ export class SipClient {
   // added later.
   holdCall(_held: boolean): void { /* noop */ }
 
+  // v0.1.5 — Send DTMF tone over the active call. Uses SIP.js's
+  // SessionDescriptionHandler.sendDtmf which produces RFC 2833
+  // telephone-event RTP packets.
+  async sendDtmf(tone: string): Promise<void> {
+    const s = this.currentSession;
+    if (!s || s.state !== SessionState.Established) return;
+    const sdh = s.sessionDescriptionHandler as unknown as {
+      sendDtmf?: (
+        tones: string,
+        options?: { duration?: number; interToneGap?: number },
+      ) => boolean;
+    } | null;
+    if (!sdh?.sendDtmf) {
+      console.warn('[SipClient] sendDtmf unavailable on sessionDescriptionHandler');
+      return;
+    }
+    const ok = sdh.sendDtmf(tone, { duration: 100, interToneGap: 70 });
+    if (!ok) {
+      console.warn('[SipClient] sendDtmf returned false for tone:', tone);
+    }
+  }
+
   // ---------- internals ----------
 
   private handleIncoming(invitation: Invitation): void {

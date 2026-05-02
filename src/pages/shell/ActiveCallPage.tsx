@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSip } from '../../store/sip';
 import { brand, fonts } from '../../theme';
 import { fetchParkSlots } from '../../api/sms';
+import { sounds } from '../../services/Sounds';
 import type { ParkSlot } from '../../api/types';
 
 export default function ActiveCallPage() {
@@ -10,12 +11,14 @@ export default function ActiveCallPage() {
   const toggleMute = useSip((s) => s.toggleMute);
   const hangupCall = useSip((s) => s.hangupCall);
   const blindTransfer = useSip((s) => s.blindTransfer);
+  const sendDtmf = useSip((s) => s.sendDtmf);
 
   const [held, setHeld] = useState(false);
   const [keypadOpen, setKeypadOpen] = useState(false);
   const [parkOpen, setParkOpen] = useState(false);
   const [parkSlots, setParkSlots] = useState<ParkSlot[]>([]);
   const [seconds, setSeconds] = useState(0);
+  const [dtmfSent, setDtmfSent] = useState('');
 
   const loadParkSlots = async () => {
     try {
@@ -50,6 +53,7 @@ export default function ActiveCallPage() {
     }
     const startedAt = Date.now();
     setSeconds(0);
+    setDtmfSent('');
     const interval = setInterval(() => {
       setSeconds(Math.floor((Date.now() - startedAt) / 1000));
     }, 1000);
@@ -115,9 +119,20 @@ export default function ActiveCallPage() {
           label="Keypad"
           active={keypadOpen}
           onClick={() => setKeypadOpen((k) => !k)}
-          stub
         />
       </div>
+
+      {keypadOpen && (
+        <InCallKeypad
+          dtmfSent={dtmfSent}
+          onPress={(d) => {
+            sounds.playDtmf(d);
+            setDtmfSent((prev) => prev + d);
+            void sendDtmf(d);
+          }}
+          onClear={() => setDtmfSent('')}
+        />
+      )}
 
       {parkOpen && (
         <div className="ddc-park-panel">
@@ -324,6 +339,88 @@ export default function ActiveCallPage() {
         .ddc-park-slot.occupied { border-color: rgba(232,19,42,0.3); background: rgba(232,19,42,0.08); }
         .ddc-park-slot-num { font-family: ${fonts.mono}; font-size: 14px; font-weight: 600; }
         .ddc-park-slot-cid { font-size: 9px; color: ${brand.textMuted}; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70px; }
+
+        .ddc-incall-keypad {
+          max-width: 320px;
+          padding: 16px;
+          background: rgba(15, 27, 45, 0.9);
+          border: 1px solid ${brand.border};
+          border-radius: 12px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+        }
+        .ddc-incall-display {
+          display: flex;
+          flex-direction: row;
+          justify-content: space-between;
+          align-items: center;
+          width: 100%;
+          min-height: 28px;
+        }
+        .ddc-incall-digits {
+          font-family: ${fonts.mono};
+          font-size: 18px;
+          letter-spacing: 3px;
+          color: ${brand.white};
+          flex: 1;
+          word-break: break-all;
+        }
+        .ddc-incall-clear {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          border: 1px solid ${brand.border};
+          background: transparent;
+          color: #8aa0d8;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          transition: color 120ms ease, border-color 120ms ease;
+        }
+        .ddc-incall-clear:hover {
+          color: ${brand.white};
+          border-color: ${brand.blue};
+        }
+        .ddc-incall-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 64px);
+          gap: 10px;
+        }
+        .ddc-incall-key {
+          width: 64px;
+          height: 64px;
+          background: rgba(7, 20, 64, 0.65);
+          border: 1px solid rgba(77, 166, 255, 0.18);
+          border-radius: 12px;
+          color: ${brand.white};
+          cursor: pointer;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          font-family: ${fonts.sans};
+          transition: background-color 120ms ease, border-color 120ms ease, transform 80ms ease;
+        }
+        .ddc-incall-key:hover {
+          border-color: ${brand.blue};
+          background: rgba(77, 166, 255, 0.10);
+        }
+        .ddc-incall-key:active {
+          transform: scale(0.96);
+          background: rgba(77, 166, 255, 0.16);
+        }
+        .ddc-incall-key-digit {
+          font-size: 22px;
+          font-weight: 600;
+        }
+        .ddc-incall-key-sub {
+          font-size: 9px;
+          letter-spacing: 1.4px;
+          color: #8aa0d8;
+        }
       `}</style>
     </div>
   );
@@ -343,6 +440,60 @@ function ControlButton({ icon, label, active, onClick, stub }: CtlProps) {
       <span className="ddc-ctl-icon">{icon}</span>
       <span className="ddc-ctl-label">{label}</span>
     </button>
+  );
+}
+
+interface InCallKeypadProps {
+  dtmfSent: string;
+  onPress: (digit: string) => void;
+  onClear: () => void;
+}
+
+const KEYPAD_KEYS: Array<{ digit: string; sub: string }> = [
+  { digit: '1', sub: '' },
+  { digit: '2', sub: 'ABC' },
+  { digit: '3', sub: 'DEF' },
+  { digit: '4', sub: 'GHI' },
+  { digit: '5', sub: 'JKL' },
+  { digit: '6', sub: 'MNO' },
+  { digit: '7', sub: 'PQRS' },
+  { digit: '8', sub: 'TUV' },
+  { digit: '9', sub: 'WXYZ' },
+  { digit: '*', sub: '' },
+  { digit: '0', sub: '+' },
+  { digit: '#', sub: '' },
+];
+
+function InCallKeypad({ dtmfSent, onPress, onClear }: InCallKeypadProps) {
+  return (
+    <div className="ddc-incall-keypad">
+      <div className="ddc-incall-display">
+        <span className="ddc-incall-digits">{dtmfSent || ' '}</span>
+        {dtmfSent && (
+          <button
+            type="button"
+            className="ddc-incall-clear"
+            onClick={onClear}
+            aria-label="Clear digits"
+          >
+            ⌫
+          </button>
+        )}
+      </div>
+      <div className="ddc-incall-grid">
+        {KEYPAD_KEYS.map((k) => (
+          <button
+            key={k.digit}
+            type="button"
+            className="ddc-incall-key"
+            onClick={() => onPress(k.digit)}
+          >
+            <span className="ddc-incall-key-digit">{k.digit}</span>
+            {k.sub && <span className="ddc-incall-key-sub">{k.sub}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
