@@ -1,6 +1,6 @@
 {
   "name": "ddconnect-desktop",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "DD Connect Desktop — Electron softphone for DDTG PBX",
   "private": true,
   "author": "Decisive Data Technology Group",
@@ -30,7 +30,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "dd-connect-desktop-setup-${version}.${ext}"
@@ -45,10 +47,17 @@
       "uninstallDisplayName": "DD Connect Desktop",
       "installerHeaderIcon": null,
       "deleteAppDataOnUninstall": false
-    }
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://portal.decisivedatatech.com/download/"
+      }
+    ]
   },
   "dependencies": {
     "axios": "^1.7.7",
+    "electron-log": "^5.4.3",
     "electron-store": "^10.0.0",
     "electron-updater": "^6.3.9",
     "react": "^18.3.1",

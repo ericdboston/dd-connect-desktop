@@ -1,5 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import path from 'node:path';
+import { autoUpdater } from 'electron-updater';
+import log from 'electron-log';
 import {
   openIncomingCallWindow,
   closeIncomingCallWindow,
@@ -164,8 +166,79 @@ function createWindow() {
   }
 }
 
+// ---------- Auto-update (electron-updater + generic provider) ----------
+//
+// Provider URL is set in package.json's build.publish block. On launch the
+// updater fetches https://portal.decisivedatatech.com/download/latest.yml,
+// compares versions, and downloads the newer .exe in the background. When
+// the download completes we prompt the user; "Install Now" relaunches into
+// the new version, "Later" defers until next launch.
+//
+// In dev mode (`npm run dev`) electron-updater logs a noisy
+// "app-update.yml not found" because there's no release manifest baked in.
+// Skip the whole flow there — only packaged builds need it.
+function setupAutoUpdater() {
+  if (isDev) return;
+
+  autoUpdater.logger = log;
+  autoUpdater.autoDownload = true;
+  // We want to PROMPT before installing, not silent-install on quit.
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('update-available', (info) => {
+    log.info('[autoUpdater] update available:', info.version);
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    log.info('[autoUpdater] no update available (current:', info.version, ')');
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    log.info('[autoUpdater] update downloaded:', info.version);
+    const opts = {
+      type: 'info' as const,
+      title: 'Update Available',
+      message: `DD Connect Desktop v${info.version} is ready to install.`,
+      detail: `You're currently on v${app.getVersion()}. Install now to get the latest features and fixes.`,
+      buttons: ['Install Now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    };
+    const promise = mainWindow
+      ? dialog.showMessageBox(mainWindow, opts)
+      : dialog.showMessageBox(opts);
+    promise.then((result) => {
+      if (result.response === 0) {
+        // (isSilent=false, isForceRunAfter=true) → run installer UI then
+        // relaunch the app on completion.
+        autoUpdater.quitAndInstall(false, true);
+      }
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    log.error('[autoUpdater] error:', err);
+  });
+
+  // Initial check 5s after launch — gives the renderer time to mount and
+  // avoids competing with first-paint resource downloads.
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      log.error('[autoUpdater] initial check failed:', err);
+    });
+  }, 5000);
+
+  // Periodic check every 4 hours for long-running sessions.
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      log.error('[autoUpdater] periodic check failed:', err);
+    });
+  }, 4 * 60 * 60 * 1000);
+}
+
 app.whenReady().then(() => {
   createWindow();
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
