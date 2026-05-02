@@ -7,6 +7,9 @@ interface IncomingCallBridgeInfo {
 }
 
 declare global {
+  // Injected by vite.config.ts `define` block at build time (YYYY-MM-DD).
+  const __BUILD_DATE__: string;
+
   interface Window {
     ddconnect: {
       platform: NodeJS.Platform;

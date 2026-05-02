@@ -3,7 +3,7 @@ import { useAuth } from '../../store/auth';
 import { useSip } from '../../store/sip';
 import { getMe, type MeResponse } from '../../api/auth';
 import { extractErrorMessage } from '../../api/client';
-import { APP_VERSION } from '../../version';
+import { APP_VERSION, BUILD_DATE } from '../../version';
 import { brand, fonts } from '../../theme';
 
 interface DeviceListState {
@@ -154,6 +154,7 @@ export default function SettingsPage() {
         <section className="ddc-card">
           <div className="ddc-card-header">About</div>
           <Row label="App version" value={APP_VERSION} mono />
+          <Row label="Build date" value={BUILD_DATE} mono />
           <Row label="SIP transport" value="mod_sofia WSS :7443" mono />
         </section>
 
