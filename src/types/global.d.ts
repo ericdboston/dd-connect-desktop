@@ -30,6 +30,20 @@ declare global {
         delete: (key: string) => Promise<void>;
         clear: () => Promise<void>;
       };
+      // v0.1.8 — OS-encrypted credential store (safeStorage-backed).
+      // Per-user, per-machine. JWT pair + sip_config (incl. SIP
+      // password) live here. Returns discriminated { ok, ... } so
+      // callers can distinguish keychain-unavailable from missing data.
+      secureStore: {
+        isAvailable: () => Promise<boolean>;
+        get: <T = unknown>() => Promise<
+          { ok: true; data: T | null } | { ok: false; error: string }
+        >;
+        set: <T = unknown>(
+          payload: T,
+        ) => Promise<{ ok: true } | { ok: false; error: string }>;
+        delete: () => Promise<{ ok: true } | { ok: false; error: string }>;
+      };
       incomingCall: {
         show: (info: IncomingCallBridgeInfo) => Promise<void>;
         dismiss: () => Promise<void>;

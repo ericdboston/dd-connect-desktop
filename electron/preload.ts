@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('ddconnect', {
   // is a main-process API so we tunnel through IPC.
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke('open-external', url),
+  // Plaintext preferences store — for non-credential settings only:
+  // remembered extension, server URL, audio device IDs, recents clear
+  // cutoff. Anything credential-bearing must use secureStore below.
   store: {
     get: <T = unknown>(key: string): Promise<T | undefined> =>
       ipcRenderer.invoke('store:get', key),
@@ -27,6 +30,24 @@ contextBridge.exposeInMainWorld('ddconnect', {
     delete: (key: string): Promise<void> =>
       ipcRenderer.invoke('store:delete', key),
     clear: (): Promise<void> => ipcRenderer.invoke('store:clear'),
+  },
+  // OS-encrypted credential store, backed by Electron safeStorage
+  // (DPAPI / Keychain / libsecret). Holds the JWT pair and sip_config
+  // (which contains the SIP registration password). Per-user, per-
+  // machine — encrypted blobs are not portable across machines or OS
+  // user accounts.
+  secureStore: {
+    isAvailable: (): Promise<boolean> =>
+      ipcRenderer.invoke('secureStore:isAvailable'),
+    get: <T = unknown>(): Promise<
+      { ok: true; data: T | null } | { ok: false; error: string }
+    > => ipcRenderer.invoke('secureStore:get'),
+    set: <T = unknown>(
+      payload: T,
+    ): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('secureStore:set', payload),
+    delete: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('secureStore:delete'),
   },
   incomingCall: {
     // Main window asks main process to open the popup.

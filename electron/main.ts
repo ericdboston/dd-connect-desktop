@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage, shell, dialog } from 'electron';
 import path from 'node:path';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
@@ -6,6 +6,8 @@ import {
   openIncomingCallWindow,
   closeIncomingCallWindow,
 } from './incomingCallWindow';
+import { SecureStore } from './secureStore';
+import { migrateLegacyStore } from './migrateLegacyStore';
 
 // Disable GPU hardware acceleration on Linux dev boxes where it tends to
 // crash Electron. Safe to leave on — software rendering is plenty fast
@@ -50,52 +52,104 @@ if (provisionArgs.extension) {
 ipcMain.handle('provision:args', () => provisionArgs);
 ipcMain.handle('open-external', (_e, url: string) => shell.openExternal(url));
 
-// electron-store v10 is ESM-only. We dynamic-import it inside an async
-// factory and cache the instance. Alternative (converting the whole
-// main-process bundle to ESM) is noisier than a one-liner await here.
-let storeInstance: unknown = null;
-async function getStore(): Promise<{
+// ---------- Persistence layout (v0.1.8) ----------
+//
+// Two stores, both rooted at app.getPath('userData'):
+//
+//   ddconnect-secure.bin   OS-encrypted credential blob (SIP password,
+//                          JWT access + refresh, sip_config). Encrypted
+//                          via Electron safeStorage — DPAPI on Windows,
+//                          Keychain on macOS, libsecret on Linux. Bound
+//                          to the OS user; not portable across machines.
+//   ddconnect-prefs.json   Plaintext user prefs that are not credentials:
+//                          remembered extension, server URL, audio
+//                          device IDs, recents clear-cutoff timestamp.
+//
+// Replaces the v0.1.7 single file ddconnect-auth.json which used
+// electron-store's "encryptionKey" option with a static value baked
+// into the binary. migrateLegacyStore() handles the upgrade.
+
+let prefsInstance: {
   get: (k: string) => unknown;
   set: (k: string, v: unknown) => void;
   delete: (k: string) => void;
   clear: () => void;
-}> {
-  if (!storeInstance) {
+} | null = null;
+
+async function getPrefs(): Promise<NonNullable<typeof prefsInstance>> {
+  if (!prefsInstance) {
+    // electron-store v10 is ESM-only. We dynamic-import to avoid
+    // converting the whole main-process bundle to ESM.
     const { default: Store } = await import('electron-store');
-    // encryptionKey is obfuscation, not real crypto — electron-store
-    // uses AES-256 with this key as the passphrase. Good enough to keep
-    // a dropped laptop from leaking the refresh token to a casual
-    // reader, not good enough to defeat a motivated attacker with
-    // filesystem access. Don't store the raw SIP password here.
-    storeInstance = new Store({
-      name: 'ddconnect-auth',
-      encryptionKey: 'ddconnect-desktop-v1',
-    }) as unknown;
+    prefsInstance = new Store({
+      name: 'ddconnect-prefs',
+    }) as unknown as NonNullable<typeof prefsInstance>;
   }
-  return storeInstance as {
-    get: (k: string) => unknown;
-    set: (k: string, v: unknown) => void;
-    delete: (k: string) => void;
-    clear: () => void;
-  };
+  return prefsInstance;
+}
+
+const secureStore = new SecureStore(safeStorage, app.getPath('userData'));
+
+// Run the legacy migration once per process. Driven by app.whenReady
+// below so app.getPath('userData') resolves to the real location.
+let migrationRan = false;
+async function runMigrationOnce(): Promise<void> {
+  if (migrationRan) return;
+  migrationRan = true;
+  try {
+    const prefs = await getPrefs();
+    const result = await migrateLegacyStore(
+      app.getPath('userData'),
+      secureStore,
+      prefs,
+    );
+    if (result.hadLegacyFile) {
+      if (result.migrated) {
+        log.info(
+          '[migrate] legacy store migrated:',
+          `session=${result.migratedSession}`,
+          `prefs=${result.migratedPrefCount}`,
+        );
+      } else {
+        log.warn('[migrate] legacy store NOT migrated:', result.error);
+      }
+    }
+  } catch (err) {
+    log.error('[migrate] unexpected failure:', err);
+  }
 }
 
 ipcMain.handle('store:get', async (_e, key: string) => {
-  const s = await getStore();
+  const s = await getPrefs();
   return s.get(key);
 });
 ipcMain.handle('store:set', async (_e, key: string, value: unknown) => {
-  const s = await getStore();
+  const s = await getPrefs();
   s.set(key, value);
 });
 ipcMain.handle('store:delete', async (_e, key: string) => {
-  const s = await getStore();
+  const s = await getPrefs();
   s.delete(key);
 });
 ipcMain.handle('store:clear', async () => {
-  const s = await getStore();
+  const s = await getPrefs();
   s.clear();
 });
+
+// Secure store IPC — used by the renderer's auth store for the session
+// blob (JWT pair + sip_config including SIP password). All four handlers
+// return a discriminated { ok, ... } shape so the renderer can show a
+// clear error when the OS keychain is unavailable instead of silently
+// degrading to plaintext.
+ipcMain.handle('secureStore:isAvailable', () => secureStore.isAvailable());
+ipcMain.handle('secureStore:get', async () => {
+  await runMigrationOnce();
+  return secureStore.get();
+});
+ipcMain.handle('secureStore:set', async (_e, payload: unknown) =>
+  secureStore.set(payload),
+);
+ipcMain.handle('secureStore:delete', async () => secureStore.delete());
 
 // ---------- Incoming-call popup IPC ----------
 //
@@ -236,7 +290,13 @@ function setupAutoUpdater() {
   }, 4 * 60 * 60 * 1000);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Run the legacy → safeStorage migration before the renderer mounts
+  // so the very first secureStore:get from auth.hydrate sees the new
+  // layout. Errors are logged inside runMigrationOnce; we don't block
+  // window creation on them.
+  await runMigrationOnce();
+
   createWindow();
   setupAutoUpdater();
 

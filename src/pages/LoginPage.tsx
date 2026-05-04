@@ -12,6 +12,7 @@ const DEFAULT_SERVER = 'https://portal.decisivedatatech.com';
 export default function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuth((s) => s.setSession);
+  const persistError = useAuth((s) => s.persistError);
 
   const [extension, setExtension] = useState('');
   const [password, setPassword] = useState('');
@@ -251,6 +252,12 @@ export default function LoginPage() {
           </button>
 
           {error && <div className="ddc-error">{error}</div>}
+          {!error && remember && persistError && (
+            <div className="ddc-warn">
+              OS keychain unavailable — credentials cannot be remembered on
+              this device. You will need to sign in again next launch.
+            </div>
+          )}
         </form>
       </div>
 
@@ -472,6 +479,14 @@ export default function LoginPage() {
           font-size: 13px;
           text-align: center;
           letter-spacing: 0.5px;
+        }
+        .ddc-warn {
+          margin-top: 16px;
+          color: #f5b041;
+          font-size: 12px;
+          text-align: center;
+          letter-spacing: 0.3px;
+          line-height: 1.4;
         }
 
         .ddc-footer {
